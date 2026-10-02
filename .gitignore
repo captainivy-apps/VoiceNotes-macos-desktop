@@ -1,0 +1,28 @@
+# macOS
+.DS_Store
+
+# Build output
+build/
+dist/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcscmblueprint
+*.xccheckout
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM
+*.dSYM.zip
+
+# Swift Package Manager
+.build/
+Package.resolved
+
+# Generated whisper build artifacts (keep Frameworks/whisper.xcframework)
+Vendor/whisper.cpp/build-macos/
+Vendor/whisper.cpp/build-apple/
+Vendor/whisper.cpp/build-*/
+
+# Local
+*.log

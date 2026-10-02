@@ -1,0 +1,435 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		AA0000000000000000000018 /* whisper.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000017 /* whisper.xcframework */; };
+		AA0000000000000000000019 /* whisper.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000017 /* whisper.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		AA000000000000000000003A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AA0000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AA0000000000000000000010;
+			remoteInfo = VoiceNotes;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		AA0000000000000000000016 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				AA0000000000000000000019 /* whisper.xcframework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		AA0000000000000000000011 /* VoiceNotes.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VoiceNotes.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA0000000000000000000017 /* whisper.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = whisper.xcframework; path = Frameworks/whisper.xcframework; sourceTree = "<group>"; };
+		AA000000000000000000001A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		AA000000000000000000001B /* VoiceNotes.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = VoiceNotes.entitlements; sourceTree = "<group>"; };
+		AA0000000000000000000031 /* VoiceNotesTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VoiceNotesTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		AA0000000000000000000012 /* VoiceNotes */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = VoiceNotes;
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000032 /* VoiceNotesTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = VoiceNotesTests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		AA0000000000000000000014 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA0000000000000000000018 /* whisper.xcframework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA0000000000000000000034 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		AA0000000000000000000002 = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000012 /* VoiceNotes */,
+				AA0000000000000000000032 /* VoiceNotesTests */,
+				AA0000000000000000000004 /* Support */,
+				AA0000000000000000000005 /* Frameworks */,
+				AA0000000000000000000003 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000003 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000011 /* VoiceNotes.app */,
+				AA0000000000000000000031 /* VoiceNotesTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000004 /* Support */ = {
+			isa = PBXGroup;
+			children = (
+				AA000000000000000000001A /* Info.plist */,
+				AA000000000000000000001B /* VoiceNotes.entitlements */,
+			);
+			path = Support;
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000005 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000017 /* whisper.xcframework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		AA0000000000000000000010 /* VoiceNotes */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA0000000000000000000025 /* Build configuration list for PBXNativeTarget "VoiceNotes" */;
+			buildPhases = (
+				AA0000000000000000000013 /* Sources */,
+				AA0000000000000000000014 /* Frameworks */,
+				AA0000000000000000000015 /* Resources */,
+				AA0000000000000000000016 /* Embed Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AA0000000000000000000012 /* VoiceNotes */,
+			);
+			name = VoiceNotes;
+			productName = VoiceNotes;
+			productReference = AA0000000000000000000011 /* VoiceNotes.app */;
+			productType = "com.apple.product-type.application";
+		};
+		AA0000000000000000000030 /* VoiceNotesTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA0000000000000000000038 /* Build configuration list for PBXNativeTarget "VoiceNotesTests" */;
+			buildPhases = (
+				AA0000000000000000000033 /* Sources */,
+				AA0000000000000000000034 /* Frameworks */,
+				AA0000000000000000000035 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AA0000000000000000000039 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				AA0000000000000000000032 /* VoiceNotesTests */,
+			);
+			name = VoiceNotesTests;
+			productName = VoiceNotesTests;
+			productReference = AA0000000000000000000031 /* VoiceNotesTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		AA0000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2650;
+				LastUpgradeCheck = 2650;
+				TargetAttributes = {
+					AA0000000000000000000010 = {
+						CreatedOnToolsVersion = 26.5;
+					};
+					AA0000000000000000000030 = {
+						CreatedOnToolsVersion = 26.5;
+						TestTargetID = AA0000000000000000000010;
+					};
+				};
+			};
+			buildConfigurationList = AA0000000000000000000024 /* Build configuration list for PBXProject "VoiceNotes" */;
+			compatibilityVersion = "Xcode 15.0";
+			developmentRegion = zh_CN;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				zh_CN,
+				en,
+				Base,
+			);
+			mainGroup = AA0000000000000000000002;
+			productRefGroup = AA0000000000000000000003 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				AA0000000000000000000010 /* VoiceNotes */,
+				AA0000000000000000000030 /* VoiceNotesTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		AA0000000000000000000015 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA0000000000000000000035 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		AA0000000000000000000013 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA0000000000000000000033 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		AA0000000000000000000039 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AA0000000000000000000010 /* VoiceNotes */;
+			targetProxy = AA000000000000000000003A /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		AA0000000000000000000020 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++17";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_STRICT_CONCURRENCY = minimal;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		AA0000000000000000000021 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++17";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				ONLY_ACTIVE_ARCH = NO;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_STRICT_CONCURRENCY = minimal;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		AA0000000000000000000022 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Support/VoiceNotes.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Support/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.dafei.voicenotes;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Debug;
+		};
+		AA0000000000000000000023 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Support/VoiceNotes.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Support/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.dafei.voicenotes;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Release;
+		};
+		AA0000000000000000000036 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Manual;
+				CODE_SIGN_IDENTITY = "-";
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.dafei.voicenotes.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/VoiceNotes.app/Contents/MacOS/VoiceNotes";
+			};
+			name = Debug;
+		};
+		AA0000000000000000000037 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Manual;
+				CODE_SIGN_IDENTITY = "-";
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.dafei.voicenotes.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/VoiceNotes.app/Contents/MacOS/VoiceNotes";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		AA0000000000000000000024 /* Build configuration list for PBXProject "VoiceNotes" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA0000000000000000000020 /* Debug */,
+				AA0000000000000000000021 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA0000000000000000000025 /* Build configuration list for PBXNativeTarget "VoiceNotes" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA0000000000000000000022 /* Debug */,
+				AA0000000000000000000023 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA0000000000000000000038 /* Build configuration list for PBXNativeTarget "VoiceNotesTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA0000000000000000000036 /* Debug */,
+				AA0000000000000000000037 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = AA0000000000000000000001 /* Project object */;
+}
