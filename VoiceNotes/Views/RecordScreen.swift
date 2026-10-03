@@ -23,6 +23,10 @@ struct RecordScreen: View {
                 Text(formatDuration(vm.isRecording ? vm.elapsedMs : vm.durationMs))
                     .font(.title2.monospacedDigit())
 
+                Text("录音设备：\(vm.inputDeviceName)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
                 WaveformView(samples: vm.waveform)
                     .frame(height: 120)
                     .frame(maxWidth: 640)
@@ -67,6 +71,7 @@ struct RecordScreen: View {
             if !presented { vm.dismissAsrPrompt() }
         }
         .toast($vm.toast)
+        .onAppear { vm.refreshInputDeviceName() }
         .navigationTitle("录制")
     }
 

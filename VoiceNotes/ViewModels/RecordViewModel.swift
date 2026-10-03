@@ -19,6 +19,7 @@ final class RecordViewModel: ObservableObject {
     @Published var llmElapsedMs: Int64 = 0
     @Published var error: String?
     @Published var toast: String?
+    @Published var inputDeviceName = ""
 
     private let services: AppServices
     private let recorder = AudioRecorder()
@@ -30,6 +31,11 @@ final class RecordViewModel: ObservableObject {
     init(services: AppServices) {
         self.services = services
         refreshLlmProfiles()
+        refreshInputDeviceName()
+    }
+
+    func refreshInputDeviceName() {
+        inputDeviceName = AudioInputDevices.currentInputName(selectedUID: AppSettings.selectedInputDeviceUID)
     }
 
     var elapsedMs: Int64 {
@@ -71,6 +77,9 @@ final class RecordViewModel: ObservableObject {
                 return
             }
             let url = Paths.newRecordingFile()
+            let deviceUID = AppSettings.selectedInputDeviceUID
+            recorder.inputDeviceUID = deviceUID.isEmpty ? nil : deviceUID
+            refreshInputDeviceName()
             do {
                 try recorder.start(url: url)
             } catch {
@@ -159,7 +168,7 @@ final class RecordViewModel: ObservableObject {
         guard let path = audioPath, let entryId else { return }
         awaitingAsrPrompt = false
         isProcessing = true
-        asrProgress = 0
+        asrProgress = nil
         asrElapsedMs = 0
         statusMessage = AsrProgressMessages.format(.loadingModel, 0)
         error = nil
@@ -170,7 +179,7 @@ final class RecordViewModel: ObservableObject {
             do {
                 let text = try await services.whisper.transcribe(modelId: modelId, wavURL: URL(fileURLWithPath: path)) { [weak self] progress, phase in
                     Task { @MainActor in
-                        self?.asrProgress = progress
+                        self?.asrProgress = phase == .loadingModel ? nil : progress
                         self?.statusMessage = AsrProgressMessages.format(phase, progress)
                     }
                 }

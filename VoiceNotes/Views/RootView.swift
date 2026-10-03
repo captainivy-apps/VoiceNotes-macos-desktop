@@ -28,7 +28,7 @@ struct RootView: View {
                     .tag(item)
             }
             .listStyle(.sidebar)
-            .navigationSplitViewColumnWidth(min: 160, ideal: 180, max: 220)
+            .navigationSplitViewColumnWidth(180)
         } detail: {
             switch selection ?? .record {
             case .notes:

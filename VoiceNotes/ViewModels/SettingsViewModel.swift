@@ -6,9 +6,13 @@ final class SettingsViewModel: ObservableObject {
     @Published var downloadedIds: Set<String> = []
     @Published var selectedModelId: String = AppSettings.defaultAsrModel
     @Published var downloadProgress: [String: Double] = [:]
+    @Published var downloadingIds: Set<String> = []
     @Published var modelDownloadTimes: [String: Date] = [:]
     @Published var llmProfiles: [LlmProfile] = []
     @Published var activeLlmProfileId = ""
+
+    @Published var inputDevices: [AudioInputDevice] = []
+    @Published var selectedInputDeviceUID = AppSettings.selectedInputDeviceUID
 
     @Published var editorOpen = false
     @Published var editorIsNew = false
@@ -30,6 +34,8 @@ final class SettingsViewModel: ObservableObject {
         refresh()
     }
 
+    var isDownloadingAny: Bool { !downloadingIds.isEmpty }
+
     func refresh() {
         downloadedIds = Set(AsrModels.all.filter { services.downloader.isDownloaded($0) }.map(\.id))
         let selected = AppSettings.selectedAsrModel
@@ -45,6 +51,20 @@ final class SettingsViewModel: ObservableObject {
         modelDownloadTimes = times
         llmProfiles = AppSettings.llmProfiles
         activeLlmProfileId = AppSettings.activeLlmProfileId
+        refreshInputDevices()
+    }
+
+    func refreshInputDevices() {
+        inputDevices = AudioInputDevices.all()
+        selectedInputDeviceUID = AppSettings.selectedInputDeviceUID
+    }
+
+    func selectInputDevice(_ uid: String) {
+        AppSettings.selectedInputDeviceUID = uid
+        selectedInputDeviceUID = uid
+        let name = inputDevices.first { $0.id == uid }?.name
+        message = uid.isEmpty ? "已选择系统默认麦克风" : "已选择「\(name ?? uid)」"
+        error = nil
     }
 
     func selectModel(_ id: String) {
@@ -61,12 +81,14 @@ final class SettingsViewModel: ObservableObject {
         guard let model = AsrModels.find(id) else { return }
         error = nil
         message = useMirror ? "开始从镜像下载 \(model.displayName)" : "开始下载 \(model.displayName)"
+        downloadingIds.insert(id)
         Task {
             do {
                 _ = try await services.downloader.download(model, useMirror: useMirror) { [weak self] progress in
                     Task { @MainActor in self?.downloadProgress[id] = progress }
                 }
                 downloadProgress[id] = nil
+                downloadingIds.remove(id)
                 message = "\(model.displayName) 下载完成"
                 toast = "\(model.displayName) 下载完成"
                 let selected = AsrModels.find(AppSettings.selectedAsrModel)
@@ -76,6 +98,7 @@ final class SettingsViewModel: ObservableObject {
                 refresh()
             } catch {
                 downloadProgress[id] = nil
+                downloadingIds.remove(id)
                 let detail = error.localizedDescription
                 let message = "\(detail)。请检查网络连接或代理设置后重试。"
                 self.error = message

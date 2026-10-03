@@ -1,10 +1,21 @@
 import AVFoundation
+import CoreMedia
 import Foundation
 
 /// Records microphone input to a 16 kHz mono 16-bit PCM WAV file and exposes
 /// a rolling window of normalized amplitudes for the waveform view.
-final class AudioRecorder {
-    private let engine = AVAudioEngine()
+///
+/// Uses `AVCaptureSession`, which (unlike `AVAudioEngine`) can bind to an
+/// arbitrary input device, including input-only microphones.
+final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
+    /// `AVCaptureDevice.uniqueID` of the device to record from; nil or empty uses the system default.
+    var inputDeviceUID: String?
+
+    private let session = AVCaptureSession()
+    private let audioOutput = AVCaptureAudioDataOutput()
+    /// Serial queue for all capture callbacks and file/state mutation.
+    private let stateQueue = DispatchQueue(label: "com.dafei.voicenotes.recorder.state")
+
     private let targetFormat = AVAudioFormat(
         commonFormat: .pcmFormatInt16,
         sampleRate: Double(WavFile.sampleRate),
@@ -12,10 +23,13 @@ final class AudioRecorder {
         interleaved: true
     )!
 
+    // State accessed only on `stateQueue`.
     private var fileHandle: FileHandle?
     private var converter: AVAudioConverter?
+    private var converterInputFormat: AVAudioFormat?
     private var totalPcmBytes: UInt64 = 0
     private var displayGain: Float = 0.08
+
     private let amplitudeLock = NSLock()
     private var amplitudeHistory: [Float] = []
     private let maxAmplitudeHistory = 120
@@ -48,83 +62,122 @@ final class AudioRecorder {
         let handle = try FileHandle(forWritingTo: url)
         try WavFile.writeHeader(handle: handle, pcmBytes: 0)
         try handle.seekToEnd()
-        fileHandle = handle
-        totalPcmBytes = 0
-        lastError = nil
-        displayGain = 0.08
-        amplitudeLock.lock()
-        amplitudeHistory.removeAll()
-        amplitudeLock.unlock()
 
-        let input = engine.inputNode
-        let inputFormat = input.outputFormat(forBus: 0)
-        guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
+        stateQueue.sync {
+            fileHandle = handle
+            totalPcmBytes = 0
+            converter = nil
+            converterInputFormat = nil
+            lastError = nil
+            displayGain = 0.08
+            amplitudeLock.lock()
+            amplitudeHistory.removeAll()
+            amplitudeLock.unlock()
+        }
+
+        let device = resolveDevice()
+        guard let device else {
             try? handle.close()
-            fileHandle = nil
+            stateQueue.sync { fileHandle = nil }
             throw NSError(domain: "VoiceNotes.Audio", code: -1,
                           userInfo: [NSLocalizedDescriptionKey: "未检测到可用的音频输入设备"])
         }
-        guard let converter = AVAudioConverter(from: inputFormat, to: targetFormat) else {
-            try? handle.close()
-            fileHandle = nil
-            throw NSError(domain: "VoiceNotes.Audio", code: -2,
-                          userInfo: [NSLocalizedDescriptionKey: "无法创建音频转换器"])
-        }
-        self.converter = converter
 
-        input.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, _ in
-            self?.process(buffer)
-        }
-        engine.prepare()
+        let deviceInput: AVCaptureDeviceInput
         do {
-            try engine.start()
+            deviceInput = try AVCaptureDeviceInput(device: device)
         } catch {
-            input.removeTap(onBus: 0)
             try? handle.close()
-            fileHandle = nil
-            throw NSError(domain: "VoiceNotes.Audio", code: -3,
-                          userInfo: [NSLocalizedDescriptionKey: "无法启动录音：\(error.localizedDescription)"])
+            stateQueue.sync { fileHandle = nil }
+            throw NSError(domain: "VoiceNotes.Audio", code: -2,
+                          userInfo: [NSLocalizedDescriptionKey: "无法使用所选录音设备：\(error.localizedDescription)"])
         }
-        isRecording = true
-        startedAt = Date()
+
+        session.beginConfiguration()
+        session.inputs.forEach { session.removeInput($0) }
+        session.outputs.forEach { session.removeOutput($0) }
+        guard session.canAddInput(deviceInput) else {
+            session.commitConfiguration()
+            try? handle.close()
+            stateQueue.sync { fileHandle = nil }
+            throw NSError(domain: "VoiceNotes.Audio", code: -3,
+                          userInfo: [NSLocalizedDescriptionKey: "无法添加录音设备"])
+        }
+        session.addInput(deviceInput)
+        guard session.canAddOutput(audioOutput) else {
+            session.commitConfiguration()
+            try? handle.close()
+            stateQueue.sync { fileHandle = nil }
+            throw NSError(domain: "VoiceNotes.Audio", code: -4,
+                          userInfo: [NSLocalizedDescriptionKey: "无法初始化录音输出"])
+        }
+        session.addOutput(audioOutput)
+        audioOutput.setSampleBufferDelegate(self, queue: stateQueue)
+        session.commitConfiguration()
+
+        session.startRunning()
+        guard session.isRunning else {
+            audioOutput.setSampleBufferDelegate(nil, queue: nil)
+            try? handle.close()
+            stateQueue.sync { fileHandle = nil }
+            throw NSError(domain: "VoiceNotes.Audio", code: -5,
+                          userInfo: [NSLocalizedDescriptionKey: "无法启动录音"])
+        }
+
+        stateQueue.sync {
+            isRecording = true
+            startedAt = Date()
+        }
     }
 
     @discardableResult
     func stop() -> Int64 {
-        guard isRecording else { return 0 }
-        isRecording = false
-        engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
-        if let handle = fileHandle {
-            try? WavFile.writeHeader(handle: handle, pcmBytes: totalPcmBytes)
-            try? handle.synchronize()
-            try? handle.close()
+        var duration: Int64 = 0
+        stateQueue.sync {
+            guard isRecording else { return }
+            isRecording = false
+            duration = finalizeFileLocked()
         }
-        fileHandle = nil
-        converter = nil
-        startedAt = nil
-        return Int64(totalPcmBytes) * 1000 / Int64(WavFile.sampleRate * 2)
+        session.stopRunning()
+        audioOutput.setSampleBufferDelegate(nil, queue: nil)
+        return duration
     }
 
     func cancel() {
-        if isRecording {
+        session.stopRunning()
+        audioOutput.setSampleBufferDelegate(nil, queue: nil)
+        stateQueue.sync {
             isRecording = false
-            engine.inputNode.removeTap(onBus: 0)
-            engine.stop()
+            _ = finalizeFileLocked()
         }
-        if let handle = fileHandle {
-            try? WavFile.writeHeader(handle: handle, pcmBytes: totalPcmBytes)
-            try? handle.close()
-        }
-        fileHandle = nil
-        converter = nil
-        startedAt = nil
     }
 
-    private func process(_ buffer: AVAudioPCMBuffer) {
-        guard isRecording, let converter, let handle = fileHandle else { return }
-        let ratio = targetFormat.sampleRate / buffer.format.sampleRate
-        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 1024
+    // MARK: - Capture
+
+    func captureOutput(
+        _ output: AVCaptureOutput,
+        didOutput sampleBuffer: CMSampleBuffer,
+        from connection: AVCaptureConnection
+    ) {
+        guard isRecording, let input = Self.makeMonoBuffer(from: sampleBuffer) else { return }
+        write(input)
+    }
+
+    /// Converts an already-downmixed mono buffer to the 16 kHz mono Int16 target.
+    private func write(_ input: AVAudioPCMBuffer) {
+        guard let handle = fileHandle else { return }
+
+        if converter == nil || converterInputFormat != input.format {
+            converter = AVAudioConverter(from: input.format, to: targetFormat)
+            converterInputFormat = input.format
+        }
+        guard let converter else {
+            lastError = "无法创建音频转换器"
+            return
+        }
+
+        let ratio = targetFormat.sampleRate / input.format.sampleRate
+        let capacity = AVAudioFrameCount(Double(input.frameLength) * ratio) + 1024
         guard let output = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: capacity) else { return }
 
         var conversionError: NSError?
@@ -136,7 +189,7 @@ final class AudioRecorder {
             }
             supplied = true
             outStatus.pointee = .haveData
-            return buffer
+            return input
         }
         if status == .error {
             lastError = conversionError?.localizedDescription ?? "音频转换失败"
@@ -173,6 +226,107 @@ final class AudioRecorder {
             amplitudeHistory.removeFirst()
         }
         amplitudeLock.unlock()
+    }
+
+    // MARK: - Helpers
+
+    private func resolveDevice() -> AVCaptureDevice? {
+        if let uid = inputDeviceUID, !uid.isEmpty,
+           let device = AudioInputDevices.captureDevice(forUID: uid) {
+            return device
+        }
+        return AudioInputDevices.defaultDevice()
+    }
+
+    /// Called on `stateQueue` only.
+    private func finalizeFileLocked() -> Int64 {
+        if let handle = fileHandle {
+            try? WavFile.writeHeader(handle: handle, pcmBytes: totalPcmBytes)
+            try? handle.synchronize()
+            try? handle.close()
+        }
+        fileHandle = nil
+        converter = nil
+        converterInputFormat = nil
+        startedAt = nil
+        return Int64(totalPcmBytes) * 1000 / Int64(WavFile.sampleRate * 2)
+    }
+
+    /// Builds a mono Float32 buffer at the source sample rate by averaging the
+    /// first two channels of the captured sample buffer. Working directly on the
+    /// audio buffers avoids `AVAudioFormat(streamDescription:)`, which rejects
+    /// high channel counts such as BlackHole 64ch.
+    private static func makeMonoBuffer(from sampleBuffer: CMSampleBuffer) -> AVAudioPCMBuffer? {
+        guard let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer),
+              let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(formatDescription) else {
+            return nil
+        }
+        let frames = CMSampleBufferGetNumSamples(sampleBuffer)
+        let channelCount = Int(asbd.pointee.mChannelsPerFrame)
+        let sampleRate = asbd.pointee.mSampleRate
+        guard frames > 0, channelCount > 0, sampleRate > 0 else { return nil }
+
+        let listSize = MemoryLayout<AudioBufferList>.size
+            + (channelCount - 1) * MemoryLayout<AudioBuffer>.size
+        let raw = UnsafeMutableRawPointer.allocate(
+            byteCount: listSize, alignment: MemoryLayout<AudioBufferList>.alignment
+        )
+        defer { raw.deallocate() }
+        let sourceList = raw.assumingMemoryBound(to: AudioBufferList.self)
+
+        var retainedBlockBuffer: CMBlockBuffer?
+        let status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
+            sampleBuffer,
+            bufferListSizeNeededOut: nil,
+            bufferListOut: sourceList,
+            bufferListSize: listSize,
+            blockBufferAllocator: nil,
+            blockBufferMemoryAllocator: nil,
+            flags: kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
+            blockBufferOut: &retainedBlockBuffer
+        )
+        guard status == noErr else { return nil }
+        let source = UnsafeMutableAudioBufferListPointer(sourceList)
+
+        guard let monoFormat = AVAudioFormat(
+                  commonFormat: .pcmFormatFloat32,
+                  sampleRate: sampleRate,
+                  channels: 1,
+                  interleaved: false
+              ),
+              let mono = AVAudioPCMBuffer(pcmFormat: monoFormat, frameCapacity: AVAudioFrameCount(frames)),
+              let destination = mono.floatChannelData?[0] else {
+            return nil
+        }
+        mono.frameLength = AVAudioFrameCount(frames)
+
+        let mixCount = min(2, channelCount)
+        let scale = 1 / Float(mixCount)
+        let isFloat = (asbd.pointee.mFormatFlags & kAudioFormatFlagIsFloat) != 0
+        let isNonInterleaved = (asbd.pointee.mFormatFlags & kAudioFormatFlagIsNonInterleaved) != 0
+        let bitsPerChannel = Int(asbd.pointee.mBitsPerChannel)
+
+        for frame in 0..<frames {
+            var sum: Float = 0
+            for channel in 0..<mixCount {
+                let bufferIndex = isNonInterleaved ? channel : 0
+                guard bufferIndex < source.count, let data = source[bufferIndex].mData else { continue }
+                let index = isNonInterleaved ? frame : frame * channelCount + channel
+                if isFloat {
+                    if bitsPerChannel == 32 {
+                        sum += data.assumingMemoryBound(to: Float.self)[index]
+                    } else if bitsPerChannel == 64 {
+                        sum += Float(data.assumingMemoryBound(to: Double.self)[index])
+                    }
+                } else if bitsPerChannel == 16 {
+                    sum += Float(data.assumingMemoryBound(to: Int16.self)[index]) / 32768.0
+                } else if bitsPerChannel == 32 {
+                    sum += Float(data.assumingMemoryBound(to: Int32.self)[index]) / 2_147_483_648.0
+                }
+            }
+            destination[frame] = sum * scale
+        }
+        return mono
     }
 }
 

@@ -2,6 +2,7 @@ import SwiftUI
 
 private enum SettingsTab: String, CaseIterable, Identifiable {
     case rec = "录制"
+    case device = "录音设备"
     case llm = "LLM 配置"
     case help = "帮助"
     var id: String { rawValue }
@@ -31,6 +32,7 @@ struct SettingsScreen: View {
                 VStack(alignment: .leading, spacing: 16) {
                     switch tab {
                     case .rec: recTab
+                    case .device: deviceTab
                     case .llm: llmTab
                     case .help: HelpView()
                     }
@@ -66,6 +68,7 @@ struct SettingsScreen: View {
     private func modelCard(_ model: AsrModelInfo) -> some View {
         let downloaded = vm.downloadedIds.contains(model.id)
         let selected = vm.selectedModelId == model.id
+        let isDownloading = vm.downloadingIds.contains(model.id)
         let progress = vm.downloadProgress[model.id]
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -97,18 +100,27 @@ struct SettingsScreen: View {
                 .disabled(!downloaded)
             }
 
-            if let progress {
-                ProgressView(value: progress)
+            if isDownloading {
+                if let progress {
+                    ProgressView(value: progress)
+                } else {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("正在下载…").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
             }
 
             HStack(spacing: 8) {
                 if downloaded {
                     Button("删除") { vm.deleteModel(model.id) }
-                } else if progress == nil {
+                } else if !isDownloading {
                     Button("下载") { vm.downloadModel(model.id, useMirror: false) }
                         .buttonStyle(.borderedProminent)
+                        .disabled(vm.isDownloadingAny)
                     if model.hasMirror {
                         Button("镜像下载") { vm.downloadModel(model.id, useMirror: true) }
+                            .disabled(vm.isDownloadingAny)
                     }
                 }
             }
@@ -117,6 +129,55 @@ struct SettingsScreen: View {
         .background(selected ? Color.accentColor.opacity(0.12) : Color.gray.opacity(0.06))
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(selected ? Color.accentColor : Color.clear, lineWidth: 2))
         .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    // MARK: - Device tab
+
+    private var deviceTab: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("录音设备").font(.title3.bold())
+            Text("选择录音时使用的麦克风。「系统默认」会跟随 macOS 的“声音 → 输入”设置。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            deviceRow(id: "", name: "系统默认")
+            ForEach(vm.inputDevices) { device in
+                deviceRow(id: device.id, name: device.name)
+            }
+
+            if vm.inputDevices.isEmpty {
+                Text("未检测到可用的录音设备")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if !vm.selectedInputDeviceUID.isEmpty,
+                      !vm.inputDevices.contains(where: { $0.id == vm.selectedInputDeviceUID }) {
+                Text("已保存的录音设备当前不可用，录音时将回退到系统默认。")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+
+            Button("刷新设备列表") { vm.refreshInputDevices() }
+
+            if let message = vm.message { Text(message).foregroundStyle(Color.accentColor) }
+            if let error = vm.error { Text(error).foregroundStyle(.red) }
+        }
+    }
+
+    private func deviceRow(id: String, name: String) -> some View {
+        let selected = vm.selectedInputDeviceUID == id
+        return HStack(spacing: 10) {
+            Image(systemName: selected ? "largecircle.fill.circle" : "circle")
+                .font(.system(size: 18))
+                .foregroundStyle(selected ? Color.accentColor : Color.secondary)
+            Text(name).font(.headline)
+            Spacer()
+        }
+        .padding(12)
+        .background(selected ? Color.accentColor.opacity(0.12) : Color.gray.opacity(0.06))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(selected ? Color.accentColor : Color.clear, lineWidth: 2))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .contentShape(Rectangle())
+        .onTapGesture { vm.selectInputDevice(id) }
     }
 
     // MARK: - LLM tab

@@ -25,7 +25,7 @@
 | UI | SwiftUI（`NavigationSplitView`） |
 | 本地 ASR | whisper.cpp 1.8.5（Metal + BLAS + Accelerate），`whisper.xcframework` |
 | 本地存储 | SQLite（系统 `libsqlite3`） |
-| 音频 | AVFoundation（`AVAudioEngine` / `AVAudioConverter` / `AVAudioPlayer`） |
+| 音频 | AVFoundation（`AVCaptureSession` 采集 / `AVAudioConverter` / `AVAudioPlayer`） |
 | LLM | OpenAI 兼容 `/v1/chat/completions`，SSE 流式 |
 | 最低系统 | macOS 13.0（Ventura） |
 | Bundle ID | `com.dafei.voicenotes` |

@@ -85,7 +85,7 @@ final class DiaryDetailViewModel: ObservableObject {
     func runAsr() {
         guard let audioPath else { return }
         isProcessing = true
-        asrProgress = 0
+        asrProgress = nil
         asrElapsedMs = 0
         statusMessage = AsrProgressMessages.format(.loadingModel, 0)
         error = nil
@@ -96,7 +96,7 @@ final class DiaryDetailViewModel: ObservableObject {
             do {
                 let text = try await services.whisper.transcribe(modelId: modelId, wavURL: URL(fileURLWithPath: audioPath)) { [weak self] progress, phase in
                     Task { @MainActor in
-                        self?.asrProgress = progress
+                        self?.asrProgress = phase == .loadingModel ? nil : progress
                         self?.statusMessage = AsrProgressMessages.format(phase, progress)
                     }
                 }

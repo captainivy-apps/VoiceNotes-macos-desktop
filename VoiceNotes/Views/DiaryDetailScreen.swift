@@ -149,9 +149,14 @@ struct DiaryDetailScreen: View {
                 .foregroundStyle(.secondary)
                 .padding(.top, 8)
 
-            if vm.isProcessing, let progress = vm.asrProgress {
-                ProcessingOverlay(progress: progress, message: vm.statusMessage, elapsedMs: vm.asrElapsedMs)
-                    .padding(.horizontal, 16)
+            if vm.isProcessing {
+                if let progress = vm.asrProgress {
+                    ProcessingOverlay(progress: progress, message: vm.statusMessage, elapsedMs: vm.asrElapsedMs)
+                        .padding(.horizontal, 16)
+                } else {
+                    IndeterminateProcessing(message: vm.statusMessage)
+                        .padding(.horizontal, 16)
+                }
                 Spacer()
             } else if vm.audioPath != nil {
                 let positionMs = Int64(player.currentTime * 1000)
@@ -229,6 +234,9 @@ struct DiaryDetailScreen: View {
                         .padding(.horizontal, 16)
                 } else if let progress = vm.llmProgress {
                     ProcessingOverlay(progress: progress, message: vm.statusMessage, elapsedMs: vm.llmElapsedMs)
+                        .padding(.horizontal, 16)
+                } else {
+                    IndeterminateProcessing(message: vm.statusMessage)
                         .padding(.horizontal, 16)
                 }
             }

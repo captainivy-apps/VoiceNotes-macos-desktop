@@ -12,6 +12,7 @@ enum AppSettings {
     private static let keySelectedAsrModel = "selected_asr_model"
     private static let keyLlmProfiles = "llm_profiles_json"
     private static let keyActiveLlmProfileId = "active_llm_profile_id"
+    private static let keyInputDeviceUID = "selected_input_device_uid"
 
     private static var defaults: UserDefaults { .standard }
 
@@ -20,6 +21,14 @@ enum AppSettings {
     static var selectedAsrModel: String {
         get { defaults.string(forKey: keySelectedAsrModel) ?? defaultAsrModel }
         set { defaults.set(newValue, forKey: keySelectedAsrModel) }
+    }
+
+    // MARK: - Audio input
+
+    /// CoreAudio UID of the preferred recording device; empty means system default.
+    static var selectedInputDeviceUID: String {
+        get { defaults.string(forKey: keyInputDeviceUID) ?? "" }
+        set { defaults.set(newValue, forKey: keyInputDeviceUID) }
     }
 
     // MARK: - LLM profiles
