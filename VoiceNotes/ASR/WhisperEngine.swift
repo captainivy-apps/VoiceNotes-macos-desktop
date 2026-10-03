@@ -69,6 +69,9 @@ actor WhisperContext {
         params.no_context = false
         params.single_segment = false
         params.carry_initial_prompt = false
+        // Default is 5, which runs five parallel decoders per step (~5x slower)
+        // with negligible accuracy gain for transcription. Use 1.
+        params.greedy.best_of = 1
 
         let box = ProgressBox(handler: onProgress ?? { _ in })
         params.progress_callback = whisperProgressCallback
@@ -129,7 +132,7 @@ actor WhisperEngine {
     func transcribe(
         modelId: String,
         wavURL: URL,
-        language: String = "zh",
+        language: String = AsrLanguages.autoId,
         onProgress: (@Sendable (Float, AsrPhase) -> Void)? = nil
     ) async throws -> String {
         guard let model = AsrModels.find(modelId) else {

@@ -3,6 +3,7 @@ import Foundation
 /// UserDefaults-backed preferences, mirroring the Android `AppPrefs`.
 enum AppSettings {
     static let defaultAsrModel = "base"
+    static let defaultAsrLanguage = AsrLanguages.autoId
     static let defaultLLMBaseURL = "https://api.openai.com"
     static let defaultLLMModel = "gpt-4o-mini"
     static let defaultLLMSystemPrompt =
@@ -10,6 +11,7 @@ enum AppSettings {
         "去除口语赘词和重复，修正逻辑顺序，保留原意与情感，不要添加未提及的内容。"
 
     private static let keySelectedAsrModel = "selected_asr_model"
+    private static let keyAsrLanguage = "asr_language"
     private static let keyLlmProfiles = "llm_profiles_json"
     private static let keyActiveLlmProfileId = "active_llm_profile_id"
     private static let keyInputDeviceUID = "selected_input_device_uid"
@@ -21,6 +23,12 @@ enum AppSettings {
     static var selectedAsrModel: String {
         get { defaults.string(forKey: keySelectedAsrModel) ?? defaultAsrModel }
         set { defaults.set(newValue, forKey: keySelectedAsrModel) }
+    }
+
+    /// Preferred recognition language; `"auto"` lets whisper detect it per file.
+    static var asrLanguage: String {
+        get { defaults.string(forKey: keyAsrLanguage) ?? defaultAsrLanguage }
+        set { defaults.set(newValue, forKey: keyAsrLanguage) }
     }
 
     // MARK: - Audio input

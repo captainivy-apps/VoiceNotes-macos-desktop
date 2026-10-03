@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 #
 # Build a universal (arm64 + x86_64) macOS whisper.xcframework from the
-# vendored whisper.cpp sources. CoreML is disabled; Metal + BLAS are enabled.
+# vendored whisper.cpp sources. CoreML + Metal + BLAS are enabled. CoreML is
+# used automatically on Apple Silicon when a ggml-<model>-encoder.mlmodelc
+# sits next to the ggml model; otherwise it falls back to Metal/CPU
+# (WHISPER_COREML_ALLOW_FALLBACK).
 #
 # Usage:
 #   scripts/build-whisper-xcframework.sh
@@ -50,7 +53,8 @@ cmake -B "$BUILD_DIR" -G "Unix Makefiles" \
     -DWHISPER_BUILD_EXAMPLES=OFF \
     -DWHISPER_BUILD_TESTS=OFF \
     -DWHISPER_BUILD_SERVER=OFF \
-    -DWHISPER_COREML=OFF \
+    -DWHISPER_COREML=ON \
+    -DWHISPER_COREML_ALLOW_FALLBACK=ON \
     -DGGML_METAL=ON \
     -DGGML_METAL_EMBED_LIBRARY=ON \
     -DGGML_METAL_USE_BF16=ON \
@@ -81,6 +85,7 @@ find_lib() {
 
 LIBS=(
     "$(find_lib libwhisper.a)"
+    "$(find_lib libwhisper.coreml.a)"
     "$(find_lib libggml.a)"
     "$(find_lib libggml-base.a)"
     "$(find_lib libggml-cpu.a)"
@@ -124,6 +129,7 @@ framework module whisper {
     link "c++"
     link framework "Accelerate"
     link framework "Metal"
+    link framework "CoreML"
     link framework "Foundation"
 
     export *
@@ -179,7 +185,7 @@ xcrun -sdk macosx clang++ -dynamiclib \
     -arch arm64 -arch x86_64 \
     -mmacosx-version-min="$MACOS_MIN_OS_VERSION" \
     -Wl,-force_load,"$TEMP_DIR/combined.a" \
-    -framework Foundation -framework Metal -framework Accelerate \
+    -framework Foundation -framework Metal -framework Accelerate -framework CoreML \
     -install_name "@rpath/${FRAMEWORK_NAME}.framework/Versions/Current/${FRAMEWORK_NAME}" \
     -o "$OUTPUT_LIB"
 

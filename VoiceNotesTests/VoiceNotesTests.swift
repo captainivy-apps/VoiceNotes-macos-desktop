@@ -50,6 +50,42 @@ final class WavFileTests: XCTestCase {
     }
 }
 
+final class ZipUtilTests: XCTestCase {
+    func testSHA256() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("hash-\(UUID().uuidString).txt")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try Data("hello".utf8).write(to: url)
+        let expected = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        XCTAssertEqual(try ZipUtil.sha256(ofFile: url), expected)
+    }
+
+    func testUnzipPreservesBundleLayout() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("zip-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+        let bundle = root.appendingPathComponent("ggml-base-encoder.mlmodelc", isDirectory: true)
+        try FileManager.default.createDirectory(at: bundle, withIntermediateDirectories: true)
+        try Data("mil".utf8).write(to: bundle.appendingPathComponent("model.mil"))
+
+        let archive = root.appendingPathComponent("encoder.zip")
+        let zip = Process()
+        zip.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+        zip.arguments = ["-c", "-k", "--keepParent", bundle.path, archive.path]
+        try zip.run()
+        zip.waitUntilExit()
+        XCTAssertEqual(zip.terminationStatus, 0)
+        try FileManager.default.removeItem(at: bundle)
+
+        let out = root.appendingPathComponent("out", isDirectory: true)
+        try ZipUtil.unzip(archive: archive, to: out)
+        let restored = out.appendingPathComponent("ggml-base-encoder.mlmodelc/model.mil")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: restored.path))
+    }
+}
+
 final class ExportFileNamesTests: XCTestCase {
     func testNameShape() {
         let date = Date(timeIntervalSince1970: 1_700_000_000)

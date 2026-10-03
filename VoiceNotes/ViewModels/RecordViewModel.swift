@@ -177,7 +177,7 @@ final class RecordViewModel: ObservableObject {
 
         Task {
             do {
-                let text = try await services.whisper.transcribe(modelId: modelId, wavURL: URL(fileURLWithPath: path)) { [weak self] progress, phase in
+                let text = try await services.whisper.transcribe(modelId: modelId, wavURL: URL(fileURLWithPath: path), language: AppSettings.asrLanguage) { [weak self] progress, phase in
                     Task { @MainActor in
                         self?.asrProgress = phase == .loadingModel ? nil : progress
                         self?.statusMessage = AsrProgressMessages.format(phase, progress)

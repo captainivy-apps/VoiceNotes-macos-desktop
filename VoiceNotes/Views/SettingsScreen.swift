@@ -12,6 +12,7 @@ struct SettingsScreen: View {
     let services: AppServices
     @StateObject private var vm: SettingsViewModel
     @State private var tab: SettingsTab = .rec
+    @State private var coremlImportModelId: String?
 
     init(services: AppServices) {
         self.services = services
@@ -44,6 +45,20 @@ struct SettingsScreen: View {
         .sheet(isPresented: $vm.editorOpen) {
             LlmEditorSheet(vm: vm)
         }
+        .fileImporter(
+            isPresented: Binding(
+                get: { coremlImportModelId != nil },
+                set: { if !$0 { coremlImportModelId = nil } }
+            ),
+            allowedContentTypes: [.data],
+            allowsMultipleSelection: false
+        ) { result in
+            guard let modelId = coremlImportModelId else { return }
+            coremlImportModelId = nil
+            if case .success(let urls) = result, let url = urls.first {
+                vm.installCoreMLEncoder(modelId, from: url)
+            }
+        }
         .toast($vm.toast)
     }
 
@@ -51,6 +66,24 @@ struct SettingsScreen: View {
 
     private var recTab: some View {
         VStack(alignment: .leading, spacing: 12) {
+            Text("识别语言").font(.title3.bold())
+            Text("默认「自动检测」会为每次识别判断语言，适合中英混说。若音频为单一语言（如纯英文），可固定对应语言以提升准确率。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Picker("识别语言", selection: Binding(
+                get: { vm.asrLanguage },
+                set: { vm.selectAsrLanguage($0) }
+            )) {
+                ForEach(vm.asrLanguages) { language in
+                    Text(language.displayName).tag(language.id)
+                }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .frame(maxWidth: 240, alignment: .leading)
+
+            Divider()
+
             Text("ASR 模型").font(.title3.bold())
             Text("在已下载的模型中点击切换当前使用的模型。中文识别稿的标点与模型大小相关，建议使用 Small 及以上；完整排版可依赖 LLM 润色得到润色稿。")
                 .font(.caption)
@@ -124,11 +157,61 @@ struct SettingsScreen: View {
                     }
                 }
             }
+
+            if downloaded {
+                coremlRow(model)
+            }
         }
         .padding(12)
         .background(selected ? Color.accentColor.opacity(0.12) : Color.gray.opacity(0.06))
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(selected ? Color.accentColor : Color.clear, lineWidth: 2))
         .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    @ViewBuilder
+    private func coremlRow(_ model: AsrModelInfo) -> some View {
+        let installed = vm.coremlInstalledIds.contains(model.id)
+        let installing = vm.coremlInstallingIds.contains(model.id)
+        let progress = vm.coremlDownloadProgress[model.id]
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Image(systemName: installed ? "checkmark.seal.fill" : "sparkles")
+                    .foregroundStyle(installed ? Color.green : Color.secondary)
+                Text(installed ? "Core ML 编码器已安装" : "Core ML 编码器（Apple Silicon 加速）")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if installing {
+                    ProgressView().controlSize(.small)
+                } else if installed {
+                    Button("移除") { vm.removeCoreMLEncoder(model.id) }
+                        .buttonStyle(.borderless)
+                } else if model.hasCoreML {
+                    Button("下载编码器") { vm.downloadCoreMLEncoder(model.id) }
+                        .buttonStyle(.borderless)
+                    Button("导入 .mlpackage") { coremlImportModelId = model.id }
+                        .buttonStyle(.borderless)
+                } else {
+                    Button("导入 .mlpackage") { coremlImportModelId = model.id }
+                        .buttonStyle(.borderless)
+                }
+            }
+            if installing, let progress {
+                ProgressView(value: progress)
+            }
+            if !installed, !installing {
+                if let size = model.coremlSizeLabel {
+                    Text("在 Apple Silicon 上可下载编码器（约 \(size)）以启用 Neural Engine 加速；Intel Mac 会自动回退。")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("需自行生成 ggml-\(model.coremlName)-encoder.mlpackage（见 README「Core ML 加速」）后导入本机编译。")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(.top, 2)
     }
 
     // MARK: - Device tab

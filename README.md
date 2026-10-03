@@ -23,7 +23,7 @@
 | 模块 | 实现 |
 |------|------|
 | UI | SwiftUI（`NavigationSplitView`） |
-| 本地 ASR | whisper.cpp 1.8.5（Metal + BLAS + Accelerate），`whisper.xcframework` |
+| 本地 ASR | whisper.cpp 1.8.5（Metal + BLAS + Accelerate + Core ML），`whisper.xcframework` |
 | 本地存储 | SQLite（系统 `libsqlite3`） |
 | 音频 | AVFoundation（`AVCaptureSession` 采集 / `AVAudioConverter` / `AVAudioPlayer`） |
 | LLM | OpenAI 兼容 `/v1/chat/completions`，SSE 流式 |
@@ -88,6 +88,24 @@ lipo -info dist/VoiceNotes.app/Contents/Frameworks/whisper.framework/Versions/A/
 
 模型从 HuggingFace `ggerganov/whisper.cpp` 按需下载；`base` 与 `large-v3-turbo-q5_0` 支持镜像加速。
 
+## Core ML 加速（Apple Silicon）
+
+whisper.xcframework 已编译进 Core ML 支持（`WHISPER_COREML=ON`，并开启
+`WHISPER_COREML_ALLOW_FALLBACK`）。**在 Apple Silicon 上**，若模型同目录存在
+对应的 Core ML 编码器 `ggml-<模型>-encoder.mlmodelc`，whisper.cpp 会自动用它
+把编码器跑在 Neural Engine 上（约 2–3× 提速）；否则自动回退到 Metal/CPU，
+Intel Mac 亦不受影响（无 ANE，始终回退）。
+
+编码器由应用内置下载：在 **设置 → 录制 → 已下载的模型 → 下载编码器**，
+应用从镜像下载 `ggml-<模型>-encoder.mlmodelc.zip`、校验 SHA-256 后解压到
+`models/` 目录。也支持 **导入 .mlpackage** 用本机 `coremlc` 现场编译。
+
+Base / Small / Medium / Large v3 Turbo 均提供编码器；编码器打包与校验值由
+`scripts/build-coreml-encoders.sh` 生成（需 `coremltools==8.3.0`、
+`torch==2.2.2`、`openai-whisper`、`ane_transformers` 等）。产物位于
+`dist-coreml-mirror/`，需上传到镜像站点 `https://www.galaxyrover.com/mirrors/`
+的对应路径。当前校验值记录在 `VoiceNotes/Models/AsrModelInfo.swift`。
+
 ## 数据存储
 
 应用数据保存在 `~/Library/Application Support/com.dafei.voicenotes/`：
@@ -100,8 +118,9 @@ lipo -info dist/VoiceNotes.app/Contents/Frameworks/whisper.framework/Versions/A/
 
 ## 架构说明
 
-- 通用二进制：`arm64` 使用 Metal + flash attention 加速；`x86_64`（Intel）自动回退到 CPU（Accelerate/BLAS）。这是因为部分 Intel Mac 上 Metal 后端可能产生错误结果。
+- 通用二进制：`arm64` 使用 Metal + flash attention 加速，若安装了 Core ML 编码器则进一步在 Neural Engine 上运行编码器；`x86_64`（Intel）自动回退到 CPU（Accelerate/BLAS）。这是因为部分 Intel Mac 上 Metal 后端可能产生错误结果。
 - 长音频按约 5 分钟分窗、1 秒重叠分段识别，避免一次性占用过多内存。
+- 识别语言默认「自动检测」（whisper 按音频判断），可在设置中固定为中文/English 等；解码使用 `greedy.best_of = 1` 以加快速度。
 
 ## 工程结构
 

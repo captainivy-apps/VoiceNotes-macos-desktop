@@ -64,7 +64,95 @@ final class ModelDownloader: NSObject, URLSessionDownloadDelegate, @unchecked Se
             throw NSError(domain: "VoiceNotes.Download", code: -2,
                           userInfo: [NSLocalizedDescriptionKey: "下载地址无效"])
         }
+        return try await download(url, fileName: model.fileName, onProgress: onProgress)
+    }
 
+    func delete(_ model: AsrModelInfo) -> Bool {
+        let file = modelFile(model)
+        removeCoreMLEncoder(model)
+        if fileManager.fileExists(atPath: file.path) {
+            return (try? fileManager.removeItem(at: file)) != nil
+        }
+        return true
+    }
+
+    // MARK: - Core ML encoder
+
+    /// Directory whisper.cpp looks for: `ggml-<coremlName>-encoder.mlmodelc`.
+    func coreMLEncoderDir(_ model: AsrModelInfo) -> URL {
+        modelsDir.appendingPathComponent("ggml-\(model.coremlName)-encoder.mlmodelc", isDirectory: true)
+    }
+
+    func isCoreMLEncoderInstalled(_ model: AsrModelInfo) -> Bool {
+        let dir = coreMLEncoderDir(model)
+        return fileManager.fileExists(atPath: dir.appendingPathComponent("model.mil").path)
+    }
+
+    /// Downloads the packaged encoder zip and unpacks it into the models dir.
+    func downloadCoreMLEncoder(
+        _ model: AsrModelInfo,
+        onProgress: @escaping (Double) -> Void
+    ) async throws {
+        guard let urlString = model.coremlDownloadURL, let url = URL(string: urlString) else {
+            throw NSError(domain: "VoiceNotes.Download", code: -4,
+                          userInfo: [NSLocalizedDescriptionKey: "该模型暂无 Core ML 编码器"])
+        }
+
+        let zipURL = try await download(url, fileName: "ggml-\(model.coremlName)-encoder.mlmodelc.zip", onProgress: onProgress)
+
+        if let expected = model.coremlSHA256, !expected.isEmpty {
+            let actual = try ZipUtil.sha256(ofFile: zipURL)
+            guard actual.caseInsensitiveCompare(expected) == .orderedSame else {
+                try? fileManager.removeItem(at: zipURL)
+                throw NSError(domain: "VoiceNotes.Download", code: -5,
+                              userInfo: [NSLocalizedDescriptionKey: "Core ML 编码器校验失败"])
+            }
+        }
+
+        let staging = modelsDir.appendingPathComponent("coreml-staging-\(model.coremlName)", isDirectory: true)
+        try? fileManager.removeItem(at: staging)
+        try ZipUtil.unzip(archive: zipURL, to: staging)
+        try? fileManager.removeItem(at: zipURL)
+
+        let staged = staging.appendingPathComponent("ggml-\(model.coremlName)-encoder.mlmodelc", isDirectory: true)
+        guard fileManager.fileExists(atPath: staged.appendingPathComponent("model.mil").path) else {
+            try? fileManager.removeItem(at: staging)
+            throw NSError(domain: "VoiceNotes.Download", code: -6,
+                          userInfo: [NSLocalizedDescriptionKey: "Core ML 编码器解压结果无效"])
+        }
+
+        let target = coreMLEncoderDir(model)
+        try? fileManager.removeItem(at: target)
+        try fileManager.moveItem(at: staged, to: target)
+        try? fileManager.removeItem(at: staging)
+    }
+
+    /// Compiles a local `.mlpackage`/`.mlmodel` into the app's models directory.
+    /// Core ML compilation requires the system `coremlc` (Xcode command line tools).
+    func installCoreMLEncoder(_ model: AsrModelInfo, from source: URL) async throws {
+        let target = coreMLEncoderDir(model)
+        let staged = modelsDir.appendingPathComponent("coreml-staging-\(model.coremlName)")
+        try? fileManager.removeItem(at: staged)
+        try? fileManager.removeItem(at: target)
+
+        let compiled = try await CoreMLCompiler.compile(source: source, into: modelsDir, derivedData: staged)
+        try fileManager.moveItem(at: compiled, to: target)
+        try? fileManager.removeItem(at: staged)
+    }
+
+    func removeCoreMLEncoder(_ model: AsrModelInfo) {
+        let dir = coreMLEncoderDir(model)
+        if fileManager.fileExists(atPath: dir.path) {
+            try? fileManager.removeItem(at: dir)
+        }
+    }
+
+    /// Generic single-file download reusing the URLSession machinery.
+    private func download(
+        _ url: URL,
+        fileName: String,
+        onProgress: @escaping (Double) -> Void
+    ) async throws -> URL {
         lock.lock()
         if isBusy {
             lock.unlock()
@@ -74,7 +162,7 @@ final class ModelDownloader: NSObject, URLSessionDownloadDelegate, @unchecked Se
         isBusy = true
         lock.unlock()
 
-        let target = modelFile(model)
+        let target = modelsDir.appendingPathComponent(fileName)
         let temp = target.appendingPathExtension("download")
         try? fileManager.removeItem(at: temp)
 
@@ -84,7 +172,6 @@ final class ModelDownloader: NSObject, URLSessionDownloadDelegate, @unchecked Se
         lock.unlock()
 
         let task = session.downloadTask(with: url)
-
         do {
             let downloaded = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
                 lock.lock()
@@ -102,14 +189,6 @@ final class ModelDownloader: NSObject, URLSessionDownloadDelegate, @unchecked Se
             finish()
             throw error
         }
-    }
-
-    func delete(_ model: AsrModelInfo) -> Bool {
-        let file = modelFile(model)
-        if fileManager.fileExists(atPath: file.path) {
-            return (try? fileManager.removeItem(at: file)) != nil
-        }
-        return true
     }
 
     private func finish() {

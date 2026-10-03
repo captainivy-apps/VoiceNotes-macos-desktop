@@ -5,9 +5,14 @@ final class SettingsViewModel: ObservableObject {
     @Published var models: [AsrModelInfo] = AsrModels.all
     @Published var downloadedIds: Set<String> = []
     @Published var selectedModelId: String = AppSettings.defaultAsrModel
+    @Published var asrLanguages: [AsrLanguage] = AsrLanguages.all
+    @Published var asrLanguage: String = AppSettings.asrLanguage
     @Published var downloadProgress: [String: Double] = [:]
     @Published var downloadingIds: Set<String> = []
     @Published var modelDownloadTimes: [String: Date] = [:]
+    @Published var coremlInstalledIds: Set<String> = []
+    @Published var coremlInstallingIds: Set<String> = []
+    @Published var coremlDownloadProgress: [String: Double] = [:]
     @Published var llmProfiles: [LlmProfile] = []
     @Published var activeLlmProfileId = ""
 
@@ -49,6 +54,10 @@ final class SettingsViewModel: ObservableObject {
             if let date = services.downloader.downloadedAt(model) { times[model.id] = date }
         }
         modelDownloadTimes = times
+        coremlInstalledIds = Set(AsrModels.all
+            .filter { services.downloader.isCoreMLEncoderInstalled($0) }
+            .map(\.id))
+        asrLanguage = AppSettings.asrLanguage
         llmProfiles = AppSettings.llmProfiles
         activeLlmProfileId = AppSettings.activeLlmProfileId
         refreshInputDevices()
@@ -64,6 +73,14 @@ final class SettingsViewModel: ObservableObject {
         selectedInputDeviceUID = uid
         let name = inputDevices.first { $0.id == uid }?.name
         message = uid.isEmpty ? "已选择系统默认麦克风" : "已选择「\(name ?? uid)」"
+        error = nil
+    }
+
+    func selectAsrLanguage(_ id: String) {
+        guard AsrLanguages.all.contains(where: { $0.id == id }) else { return }
+        AppSettings.asrLanguage = id
+        asrLanguage = id
+        message = "识别语言已设为「\(AsrLanguages.displayName(id))」"
         error = nil
     }
 
@@ -105,6 +122,62 @@ final class SettingsViewModel: ObservableObject {
                 toast = message
             }
         }
+    }
+
+    // MARK: - Core ML encoder
+
+    func downloadCoreMLEncoder(_ id: String) {
+        guard let model = AsrModels.find(id), model.hasCoreML else { return }
+        coremlInstallingIds.insert(id)
+        error = nil
+        message = "正在下载 \(model.displayName) 的 Core ML 编码器…"
+        Task {
+            do {
+                try await services.downloader.downloadCoreMLEncoder(model) { [weak self] progress in
+                    Task { @MainActor in self?.coremlDownloadProgress[id] = progress }
+                }
+                coremlDownloadProgress[id] = nil
+                coremlInstallingIds.remove(id)
+                message = "\(model.displayName) Core ML 编码器已就绪，将在 Apple Silicon 上自动启用"
+                toast = message
+                refresh()
+            } catch {
+                coremlDownloadProgress[id] = nil
+                coremlInstallingIds.remove(id)
+                let detail = error.localizedDescription
+                self.error = detail
+                toast = detail
+            }
+        }
+    }
+
+    func installCoreMLEncoder(_ id: String, from url: URL) {
+        guard let model = AsrModels.find(id) else { return }
+        coremlInstallingIds.insert(id)
+        error = nil
+        message = "正在编译 Core ML 编码器…"
+        Task {
+            do {
+                try await services.downloader.installCoreMLEncoder(model, from: url)
+                coremlInstallingIds.remove(id)
+                message = "\(model.displayName) Core ML 编码器已就绪，将在 Apple Silicon 上自动启用"
+                toast = message
+                refresh()
+            } catch {
+                coremlInstallingIds.remove(id)
+                let detail = error.localizedDescription
+                self.error = detail
+                toast = detail
+            }
+        }
+    }
+
+    func removeCoreMLEncoder(_ id: String) {
+        guard let model = AsrModels.find(id) else { return }
+        services.downloader.removeCoreMLEncoder(model)
+        message = "已移除 \(model.displayName) 的 Core ML 编码器"
+        error = nil
+        refresh()
     }
 
     func deleteModel(_ id: String) {

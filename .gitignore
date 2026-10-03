@@ -26,3 +26,7 @@ Vendor/whisper.cpp/build-*/
 
 # Local
 *.log
+
+# Core ML encoder packages staged for mirror upload (large; regenerate with
+# scripts/build-coreml-encoders.sh)
+dist-coreml-mirror/

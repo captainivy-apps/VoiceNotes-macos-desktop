@@ -11,6 +11,7 @@ framework module whisper {
     link "c++"
     link framework "Accelerate"
     link framework "Metal"
+    link framework "CoreML"
     link framework "Foundation"
 
     export *
