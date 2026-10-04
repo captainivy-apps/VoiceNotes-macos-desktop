@@ -7,7 +7,9 @@ final class OpenAiCompatibleClient: @unchecked Sendable {
     init() {
         let configuration = URLSessionConfiguration.default
         configuration.timeoutIntervalForRequest = 60
-        configuration.timeoutIntervalForResource = 60 * 60
+        configuration.timeoutIntervalForResource = 300
+        // Required so a request to a local-network LLM waits for the macOS
+        // local-network permission grant instead of failing immediately.
         configuration.waitsForConnectivity = true
         session = URLSession(configuration: configuration)
     }
@@ -52,6 +54,7 @@ final class OpenAiCompatibleClient: @unchecked Sendable {
 
         onProgress?(0.12, .connecting)
         let (bytes, response) = try await connect(request: request, onProgress: onProgress)
+        LlmDiagnostics.log("connected \(urlString) status=\((response as? HTTPURLResponse)?.statusCode ?? -1)")
 
         guard let http = response as? HTTPURLResponse else {
             throw NSError(domain: "VoiceNotes.LLM", code: -4,
@@ -110,49 +113,43 @@ final class OpenAiCompatibleClient: @unchecked Sendable {
         min(0.9, 0.4 + 0.5 * (1 - 1 / (1 + Float(receivedCharacters) / 400)))
     }
 
-    /// Attempts the connection, retrying transient network failures with a
-    /// bounded per-attempt deadline. This absorbs the first-request failure
-    /// caused by macOS local network permission still being undetermined (and
-    /// similar cold-start errors) so the first polish no longer surfaces a
-    /// connection error.
+    /// Connects with `waitsForConnectivity` (set on the session) so a
+    /// request to a local-network LLM waits for the user to grant the macOS
+    /// local-network permission, then completes. Fast transient failures are
+    /// retried a few times; long waits are not retried.
     private func connect(
         request: URLRequest,
         onProgress: (@Sendable (Float, LlmPhase) -> Void)?
     ) async throws -> (URLSession.AsyncBytes, URLResponse) {
         let maxAttempts = 3
-        let attemptDeadline: UInt64 = 12_000_000_000
         var lastError: Error?
 
         for attempt in 1...maxAttempts {
+            let started = Date()
             do {
-                return try await withThrowingTaskGroup(of: (URLSession.AsyncBytes, URLResponse).self) { group in
-                    defer { group.cancelAll() }
-                    group.addTask { try await self.session.bytes(for: request) }
-                    group.addTask {
-                        try await Task.sleep(nanoseconds: attemptDeadline)
-                        throw ConnectTimeout()
-                    }
-                    return try await group.next()!
-                }
+                LlmDiagnostics.log("attempt \(attempt) -> \(request.url?.absoluteString ?? "?")")
+                return try await session.bytes(for: request)
             } catch {
+                let elapsed = Date().timeIntervalSince(started)
                 lastError = error
-                let transient = Self.isTransientConnectError(error) || error is ConnectTimeout
-                guard transient, attempt < maxAttempts else { break }
+                let ns = error as NSError
+                LlmDiagnostics.log("attempt \(attempt) failed in \(String(format: "%.2f", elapsed))s domain=\(ns.domain) code=\(ns.code) desc=\(error.localizedDescription)")
+                let transient = Self.isTransientConnectError(error)
+                guard transient, attempt < maxAttempts, elapsed < 5 else { break }
                 onProgress?(0.14, .connecting)
                 try? await Task.sleep(nanoseconds: UInt64(600_000_000) * UInt64(attempt))
             }
         }
 
         let error = lastError ?? URLError(.unknown)
-        let transient = Self.isTransientConnectError(error) || error is ConnectTimeout
+        let ns = error as NSError
+        let transient = Self.isTransientConnectError(error)
         let hint = transient
             ? "请稍后重试，或在「系统设置 → 隐私与安全性 → 本地网络」中允许本应用访问本地网络。"
             : ""
         throw NSError(domain: "VoiceNotes.LLM", code: -3,
-                      userInfo: [NSLocalizedDescriptionKey: "连接失败：\(error.localizedDescription)\(hint)"])
+                      userInfo: [NSLocalizedDescriptionKey: "连接失败 (NSURLError \(ns.code))：\(error.localizedDescription)\(hint)"])
     }
-
-    private struct ConnectTimeout: Error {}
 
     private static func isTransientConnectError(_ error: Error) -> Bool {
         let ns = error as NSError
@@ -169,6 +166,34 @@ final class OpenAiCompatibleClient: @unchecked Sendable {
             return true
         default:
             return false
+        }
+    }
+}
+
+/// Lightweight file logger for diagnosing local-network / connection issues.
+/// Writes to `~/Library/Logs/VoiceNotes/llm.log`.
+enum LlmDiagnostics {
+    private static let queue = DispatchQueue(label: "VoiceNotes.LlmDiagnostics")
+    private static let logURL: URL = {
+        let dir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Logs/VoiceNotes", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("llm.log")
+    }()
+
+    static func log(_ message: String) {
+        let line = "\(ISO8601DateFormatter().string(from: Date())) \(message)\n"
+        guard let data = line.data(using: .utf8) else { return }
+        queue.async {
+            if let handle = try? FileHandle(forWritingTo: logURL) {
+                defer { try? handle.close() }
+                do {
+                    try handle.seekToEnd()
+                    try handle.write(contentsOf: data)
+                } catch { }
+            } else {
+                try? data.write(to: logURL)
+            }
         }
     }
 }

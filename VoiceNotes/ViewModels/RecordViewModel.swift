@@ -282,6 +282,7 @@ final class RecordViewModel: ObservableObject {
 
     private func endLlmProcessing() {
         isLlmProcessing = false
+        isProcessing = false
         llmProgress = nil
         llmElapsedMs = 0
         statusMessage = ""
