@@ -3,6 +3,7 @@
 
 # Build output
 build/
+build-framework/
 dist/
 DerivedData/
 *.xcuserstate

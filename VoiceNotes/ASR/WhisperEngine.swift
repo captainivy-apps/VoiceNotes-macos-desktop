@@ -39,6 +39,26 @@ private func whisperProgressCallback(
     box.handler(Int(progress))
 }
 
+/// Runs `body` with a C string pointer for `string`, or `nil` when absent.
+private func withCStringOptional<T>(
+    _ string: String?,
+    _ body: (UnsafePointer<CChar>?) throws -> T
+) rethrows -> T {
+    guard let string else { return try body(nil) }
+    return try string.withCString { try body($0) }
+}
+
+/// Physical (non-hyperthreaded) core count, used to avoid oversubscribing
+/// ggml's CPU thread pool on Intel Macs.
+private func physicalCoreCount() -> Int {
+    var count: Int32 = 0
+    var size = MemoryLayout<Int32>.size
+    if sysctlbyname("hw.physicalcpu", &count, &size, nil, 0) == 0, count > 0 {
+        return Int(count)
+    }
+    return 0
+}
+
 /// Wraps a whisper.cpp context. Actor isolation satisfies whisper's
 /// single-thread constraint.
 actor WhisperContext {
@@ -56,6 +76,7 @@ actor WhisperContext {
         samples: [Float],
         language: String,
         initialPrompt: String?,
+        vadModelPath: String?,
         onProgress: (@Sendable (Int) -> Void)?
     ) throws -> String {
         var params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY)
@@ -72,6 +93,10 @@ actor WhisperContext {
         // Default is 5, which runs five parallel decoders per step (~5x slower)
         // with negligible accuracy gain for transcription. Use 1.
         params.greedy.best_of = 1
+        // Default 0.2 makes whisper re-decode a segment with rising temperature
+        // whenever the entropy/log-prob checks fail. On CPU this can silently
+        // double or triple the cost of noisier segments; disable the fallback.
+        params.temperature_inc = 0
 
         let box = ProgressBox(handler: onProgress ?? { _ in })
         params.progress_callback = whisperProgressCallback
@@ -94,24 +119,29 @@ actor WhisperContext {
         }
 
         let isChinese = language.hasPrefix("zh")
-        if isChinese, let initialPrompt {
-            return try initialPrompt.withCString { prompt in
-                params.initial_prompt = prompt
-                params.carry_initial_prompt = true
+        let prompt = isChinese ? initialPrompt : nil
+
+        return try withCStringOptional(prompt) { promptPtr in
+            params.initial_prompt = promptPtr
+            params.carry_initial_prompt = promptPtr != nil
+            return try withCStringOptional(vadModelPath) { vadPtr in
+                params.vad = vadPtr != nil
+                params.vad_model_path = vadPtr
+                if vadPtr != nil {
+                    params.vad_params = whisper_vad_default_params()
+                }
                 return try language.withCString { lang in
                     params.language = lang
                     return try runFull()
                 }
             }
         }
-        return try language.withCString { lang in
-            params.language = lang
-            return try runFull()
-        }
     }
 
     static var preferredThreadCount: Int {
-        max(1, min(8, ProcessInfo.processInfo.processorCount - 2))
+        let physical = physicalCoreCount()
+        let cores = physical > 0 ? physical : ProcessInfo.processInfo.processorCount
+        return max(1, min(8, cores))
     }
 }
 
@@ -124,6 +154,20 @@ actor WhisperEngine {
 
     private static let segmentSamples = WavFile.sampleRate * 300
     private static let overlapSamples = WavFile.sampleRate
+
+    /// Bundled Silero VAD model (also honored if dropped into the models dir).
+    /// Used to skip silence before decoding, which speeds up pause-heavy notes.
+    private static var vadModelPath: String? {
+        if let url = Bundle.main.url(forResource: "ggml-silero-v5.1.2", withExtension: "bin"),
+           FileManager.default.fileExists(atPath: url.path) {
+            return url.path
+        }
+        let local = Paths.modelsDir.appendingPathComponent("ggml-silero-v5.1.2.bin")
+        if FileManager.default.fileExists(atPath: local.path) {
+            return local.path
+        }
+        return nil
+    }
 
     init(downloader: ModelDownloader) {
         self.downloader = downloader
@@ -165,7 +209,7 @@ actor WhisperEngine {
             let progress: @Sendable (Int) -> Void = { percent in
                 onProgress?(0.15 + Float(percent) / 100 * 0.85, .transcribing)
             }
-            return try await engine.transcribe(samples: audio, language: language, initialPrompt: Self.initialPrompt(for: language), onProgress: progress)
+            return try await engine.transcribe(samples: audio, language: language, initialPrompt: Self.initialPrompt(for: language), vadModelPath: Self.vadModelPath, onProgress: progress)
         }
 
         let step = Self.segmentSamples - Self.overlapSamples
@@ -185,7 +229,7 @@ actor WhisperEngine {
                 let segmentProgress = (Float(index) + Float(percent) / 100) / Float(segmentCount)
                 onProgress?(0.15 + segmentProgress * 0.85, .transcribing)
             }
-            let text = try await engine.transcribe(samples: audio, language: language, initialPrompt: Self.initialPrompt(for: language), onProgress: progress)
+            let text = try await engine.transcribe(samples: audio, language: language, initialPrompt: Self.initialPrompt(for: language), vadModelPath: Self.vadModelPath, onProgress: progress)
             if !text.isEmpty { parts.append(text) }
             onProgress?(0.15 + Float(index + 1) / Float(segmentCount) * 0.85, .transcribing)
         }

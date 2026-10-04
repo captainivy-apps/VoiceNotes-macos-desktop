@@ -6,6 +6,12 @@
 # sits next to the ggml model; otherwise it falls back to Metal/CPU
 # (WHISPER_COREML_ALLOW_FALLBACK).
 #
+# Each architecture is configured and compiled in its own CMake build tree.
+# This is REQUIRED for correct CPU SIMD: passing a universal
+# CMAKE_OSX_ARCHITECTURES ("arm64;x86_64") makes ggml's architecture detection
+# report "UNKNOWN", which silently disables the SSE/AVX2 (x86) and NEON (ARM)
+# optimized kernels and falls back to the slow generic implementations.
+#
 # Usage:
 #   scripts/build-whisper-xcframework.sh
 #
@@ -15,10 +21,10 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WHISPER_DIR="${WHISPER_DIR:-$REPO_ROOT/Vendor/whisper.cpp}"
-BUILD_DIR="build-macos"
 FRAMEWORK_NAME="whisper"
 OUT_DIR="$REPO_ROOT/Frameworks"
 XCFRAMEWORK="$OUT_DIR/${FRAMEWORK_NAME}.xcframework"
+FW_BUILD_DIR="$REPO_ROOT/build-framework"
 
 MACOS_MIN_OS_VERSION="${MACOS_MIN_OS_VERSION:-13.0}"
 
@@ -43,63 +49,114 @@ if [[ ! -f "$WHISPER_DIR/CMakeLists.txt" ]]; then
     exit 1
 fi
 
-echo "==> Configuring whisper.cpp ($BUILD_DIR)"
 cd "$WHISPER_DIR"
-rm -rf "$BUILD_DIR"
 
-cmake -B "$BUILD_DIR" -G "Unix Makefiles" \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DBUILD_SHARED_LIBS=OFF \
-    -DWHISPER_BUILD_EXAMPLES=OFF \
-    -DWHISPER_BUILD_TESTS=OFF \
-    -DWHISPER_BUILD_SERVER=OFF \
-    -DWHISPER_COREML=ON \
-    -DWHISPER_COREML_ALLOW_FALLBACK=ON \
-    -DGGML_METAL=ON \
-    -DGGML_METAL_EMBED_LIBRARY=ON \
-    -DGGML_METAL_USE_BF16=ON \
-    -DGGML_BLAS=ON \
-    -DGGML_BLAS_VENDOR=Apple \
-    -DGGML_OPENMP=OFF \
-    -DGGML_NATIVE=OFF \
-    -DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOS_MIN_OS_VERSION" \
-    -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
-    -DCMAKE_C_FLAGS="-Wno-macro-redefined -Wno-shorten-64-to-32" \
-    -DCMAKE_CXX_FLAGS="-Wno-macro-redefined -Wno-shorten-64-to-32" \
-    -S .
-
-echo "==> Building (Release)"
-cmake --build "$BUILD_DIR" -j "$(sysctl -n hw.ncpu)"
-
-echo "==> Locating static libraries"
 find_lib() {
-    local name="$1"
+    local build_dir="$1"
+    local name="$2"
     local found
-    found="$(find "$BUILD_DIR" -type f -name "$name" -not -path "*/CMakeFiles/*" | head -n 1)"
+    found="$(find "$build_dir" -type f -name "$name" -not -path "*/CMakeFiles/*" | head -n 1)"
     if [[ -z "$found" ]]; then
-        echo "Error: could not find $name under $BUILD_DIR" >&2
+        echo "Error: could not find $name under $build_dir" >&2
         exit 1
     fi
     echo "$found"
 }
 
-LIBS=(
-    "$(find_lib libwhisper.a)"
-    "$(find_lib libwhisper.coreml.a)"
-    "$(find_lib libggml.a)"
-    "$(find_lib libggml-base.a)"
-    "$(find_lib libggml-cpu.a)"
-    "$(find_lib libggml-metal.a)"
-    "$(find_lib libggml-blas.a)"
-)
+# Global set by build_arch to the produced single-arch dynamic library path.
+ARCH_LIB=""
 
-for lib in "${LIBS[@]}"; do
-    echo "    $lib"
-done
+build_arch() {
+    local arch="$1"
+    local build_dir="build-macos-$arch"
+    local arch_flags=()
+
+    if [[ "$arch" == "x86_64" ]]; then
+        # macOS 13 (Ventura) requires 2017+ Intel Macs, all of which support
+        # AVX2/FMA/F16C/BMI2. Enable them explicitly. GGML_NATIVE=OFF keeps
+        # AVX512 off so the binary still runs on every supported CPU.
+        arch_flags+=(
+            -DGGML_SSE42=ON -DGGML_AVX=ON -DGGML_AVX2=ON
+            -DGGML_FMA=ON -DGGML_F16C=ON -DGGML_BMI2=ON
+            -DGGML_AVX512=OFF
+        )
+    elif [[ "$arch" == "arm64" ]]; then
+        # All Apple Silicon (M1+) supports dot-product and FP16 arithmetic.
+        arch_flags+=(-DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod+fp16)
+    fi
+
+    echo "==> Configuring whisper.cpp for $arch ($build_dir)"
+    rm -rf "$build_dir"
+    cmake -B "$build_dir" -G "Unix Makefiles" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DBUILD_SHARED_LIBS=OFF \
+        -DWHISPER_BUILD_EXAMPLES=OFF \
+        -DWHISPER_BUILD_TESTS=OFF \
+        -DWHISPER_BUILD_SERVER=OFF \
+        -DWHISPER_COREML=ON \
+        -DWHISPER_COREML_ALLOW_FALLBACK=ON \
+        -DGGML_METAL=ON \
+        -DGGML_METAL_EMBED_LIBRARY=ON \
+        -DGGML_METAL_USE_BF16=ON \
+        -DGGML_BLAS=ON \
+        -DGGML_BLAS_VENDOR=Apple \
+        -DGGML_OPENMP=OFF \
+        -DGGML_NATIVE=OFF \
+        -DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOS_MIN_OS_VERSION" \
+        -DCMAKE_OSX_ARCHITECTURES="$arch" \
+        -DCMAKE_C_FLAGS="-Wno-macro-redefined -Wno-shorten-64-to-32" \
+        -DCMAKE_CXX_FLAGS="-Wno-macro-redefined -Wno-shorten-64-to-32" \
+        "${arch_flags[@]}" \
+        -S .
+
+    echo "==> Building $arch (Release)"
+    cmake --build "$build_dir" -j "$(sysctl -n hw.ncpu)"
+
+    local libs=(
+        "$(find_lib "$build_dir" libwhisper.a)"
+        "$(find_lib "$build_dir" libwhisper.coreml.a)"
+        "$(find_lib "$build_dir" libggml.a)"
+        "$(find_lib "$build_dir" libggml-base.a)"
+        "$(find_lib "$build_dir" libggml-cpu.a)"
+        "$(find_lib "$build_dir" libggml-metal.a)"
+        "$(find_lib "$build_dir" libggml-blas.a)"
+    )
+
+    echo "==> Combining static libraries for $arch"
+    local temp_dir="$build_dir/temp"
+    rm -rf "$temp_dir"
+    mkdir -p "$temp_dir"
+    libtool -static -o "$temp_dir/combined-$arch.a" "${libs[@]}" 2>/dev/null
+
+    local sdk_path
+    sdk_path="$(xcrun --sdk macosx --show-sdk-path)"
+    local out="$temp_dir/${FRAMEWORK_NAME}-$arch"
+    echo "==> Creating $arch dynamic library"
+    xcrun -sdk macosx clang++ -dynamiclib \
+        -isysroot "$sdk_path" \
+        -arch "$arch" \
+        -mmacosx-version-min="$MACOS_MIN_OS_VERSION" \
+        -Wl,-force_load,"$temp_dir/combined-$arch.a" \
+        -framework Foundation -framework Metal -framework Accelerate -framework CoreML \
+        -install_name "@rpath/${FRAMEWORK_NAME}.framework/Versions/Current/${FRAMEWORK_NAME}" \
+        -o "$out"
+
+    echo "==> Stripping debug info for $arch"
+    xcrun strip -S "$out" -o "$out.stripped"
+    mv "$out.stripped" "$out"
+    rm -rf "$out.dSYM"
+
+    ARCH_LIB="$out"
+}
+
+build_arch arm64
+LIB_ARM64="$ARCH_LIB"
+build_arch x86_64
+LIB_X86_64="$ARCH_LIB"
 
 echo "==> Assembling ${FRAMEWORK_NAME}.framework"
-FW_DIR="$WHISPER_DIR/$BUILD_DIR/framework/${FRAMEWORK_NAME}.framework"
-rm -rf "$WHISPER_DIR/$BUILD_DIR/framework"
+FW_DIR="$FW_BUILD_DIR/${FRAMEWORK_NAME}.framework"
+rm -rf "$FW_BUILD_DIR"
 mkdir -p "$FW_DIR/Versions/A/Headers" \
          "$FW_DIR/Versions/A/Modules" \
          "$FW_DIR/Versions/A/Resources"
@@ -171,29 +228,10 @@ cat > "$FW_DIR/Versions/A/Resources/Info.plist" <<EOF
 </plist>
 EOF
 
-echo "==> Combining static libraries"
-TEMP_DIR="$WHISPER_DIR/$BUILD_DIR/temp"
-rm -rf "$TEMP_DIR"
-mkdir -p "$TEMP_DIR"
-libtool -static -o "$TEMP_DIR/combined.a" "${LIBS[@]}" 2>/dev/null
-
-OUTPUT_LIB="$FW_DIR/Versions/A/${FRAMEWORK_NAME}"
 echo "==> Creating universal dynamic library"
-SDK_PATH="$(xcrun --sdk macosx --show-sdk-path)"
-xcrun -sdk macosx clang++ -dynamiclib \
-    -isysroot "$SDK_PATH" \
-    -arch arm64 -arch x86_64 \
-    -mmacosx-version-min="$MACOS_MIN_OS_VERSION" \
-    -Wl,-force_load,"$TEMP_DIR/combined.a" \
-    -framework Foundation -framework Metal -framework Accelerate -framework CoreML \
-    -install_name "@rpath/${FRAMEWORK_NAME}.framework/Versions/Current/${FRAMEWORK_NAME}" \
-    -o "$OUTPUT_LIB"
-
-echo "==> Stripping debug info"
-xcrun strip -S "$OUTPUT_LIB" -o "$TEMP_DIR/stripped_lib"
-mv "$TEMP_DIR/stripped_lib" "$OUTPUT_LIB"
-rm -rf "$TEMP_DIR" "$OUTPUT_LIB.dSYM"
-if [[ -d "$FW_DIR/Versions/A/Resources" ]]; then :; fi
+OUTPUT_LIB="$FW_DIR/Versions/A/${FRAMEWORK_NAME}"
+lipo -create "$LIB_ARM64" "$LIB_X86_64" -output "$OUTPUT_LIB"
+lipo -info "$OUTPUT_LIB"
 
 echo "==> Creating xcframework"
 mkdir -p "$OUT_DIR"

@@ -66,6 +66,21 @@ struct SettingsScreen: View {
 
     private var recTab: some View {
         VStack(alignment: .leading, spacing: 12) {
+            Text("模型下载镜像").font(.title3.bold())
+            Text("用于 ASR 模型与 Core ML 编码器的「镜像下载」地址。留空则不显示镜像下载选项。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                TextField("https://…/mirrors", text: $vm.mirrorBaseURL)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit { vm.saveMirrorBaseURL() }
+                Button("保存") { vm.saveMirrorBaseURL() }
+                Button("清空") { vm.clearMirrorBaseURL() }
+            }
+            .frame(maxWidth: 560, alignment: .leading)
+
+            Divider()
+
             Text("识别语言").font(.title3.bold())
             Text("默认「自动检测」会为每次识别判断语言，适合中英混说。若音频为单一语言（如纯英文），可固定对应语言以提升准确率。")
                 .font(.caption)
@@ -159,7 +174,14 @@ struct SettingsScreen: View {
             }
 
             if downloaded {
-                coremlRow(model)
+                if model.quantized {
+                    Text("量化模型使用 AVX2 整型内核，面向 Intel CPU 优化；Apple Silicon 上会复用同名非量化模型的 Core ML 编码器（若已安装）。")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 2)
+                } else {
+                    coremlRow(model)
+                }
             }
         }
         .padding(12)
@@ -187,8 +209,12 @@ struct SettingsScreen: View {
                     Button("移除") { vm.removeCoreMLEncoder(model.id) }
                         .buttonStyle(.borderless)
                 } else if model.hasCoreML {
-                    Button("下载编码器") { vm.downloadCoreMLEncoder(model.id) }
+                    Button("原版下载") { vm.downloadCoreMLEncoder(model.id, useMirror: false) }
                         .buttonStyle(.borderless)
+                    if model.hasCoreMLMirror {
+                        Button("镜像下载") { vm.downloadCoreMLEncoder(model.id, useMirror: true) }
+                            .buttonStyle(.borderless)
+                    }
                     Button("导入 .mlpackage") { coremlImportModelId = model.id }
                         .buttonStyle(.borderless)
                 } else {
@@ -201,7 +227,7 @@ struct SettingsScreen: View {
             }
             if !installed, !installing {
                 if let size = model.coremlSizeLabel {
-                    Text("在 Apple Silicon 上可下载编码器（约 \(size)）以启用 Neural Engine 加速；Intel Mac 会自动回退。")
+                    Text("在 Apple Silicon 上可下载编码器（约 \(size)，支持原版 / 镜像）以启用 Neural Engine 加速；Intel Mac 会自动回退。")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 } else {

@@ -52,9 +52,13 @@ final class ModelDownloader: NSObject, URLSessionDownloadDelegate, @unchecked Se
     ) async throws -> URL {
         let urlString: String
         if useMirror {
-            guard let mirror = model.mirrorDownloadURL else {
+            guard let path = model.mirrorPath else {
                 throw NSError(domain: "VoiceNotes.Download", code: -1,
                               userInfo: [NSLocalizedDescriptionKey: "该模型暂无镜像"])
+            }
+            guard let mirror = AppSettings.mirrorURL(path: path) else {
+                throw NSError(domain: "VoiceNotes.Download", code: -9,
+                              userInfo: [NSLocalizedDescriptionKey: "请先在设置中填写镜像地址"])
             }
             urlString = mirror
         } else {
@@ -64,7 +68,16 @@ final class ModelDownloader: NSObject, URLSessionDownloadDelegate, @unchecked Se
             throw NSError(domain: "VoiceNotes.Download", code: -2,
                           userInfo: [NSLocalizedDescriptionKey: "下载地址无效"])
         }
-        return try await download(url, fileName: model.fileName, onProgress: onProgress)
+        let file = try await download(url, fileName: model.fileName, onProgress: onProgress)
+        if let expected = model.sha256, !expected.isEmpty {
+            let actual = try ZipUtil.sha256(ofFile: file)
+            guard actual.caseInsensitiveCompare(expected) == .orderedSame else {
+                try? fileManager.removeItem(at: file)
+                throw NSError(domain: "VoiceNotes.Download", code: -7,
+                              userInfo: [NSLocalizedDescriptionKey: "模型文件校验失败，请重试或更换下载源"])
+            }
+        }
+        return file
     }
 
     func delete(_ model: AsrModelInfo) -> Bool {
@@ -91,16 +104,33 @@ final class ModelDownloader: NSObject, URLSessionDownloadDelegate, @unchecked Se
     /// Downloads the packaged encoder zip and unpacks it into the models dir.
     func downloadCoreMLEncoder(
         _ model: AsrModelInfo,
+        useMirror: Bool = false,
         onProgress: @escaping (Double) -> Void
     ) async throws {
-        guard let urlString = model.coremlDownloadURL, let url = URL(string: urlString) else {
+        let urlString: String?
+        if useMirror {
+            guard let path = model.coremlMirrorPath else {
+                throw NSError(domain: "VoiceNotes.Download", code: -8,
+                              userInfo: [NSLocalizedDescriptionKey: "该编码器暂无镜像"])
+            }
+            guard let mirror = AppSettings.mirrorURL(path: path) else {
+                throw NSError(domain: "VoiceNotes.Download", code: -9,
+                              userInfo: [NSLocalizedDescriptionKey: "请先在设置中填写镜像地址"])
+            }
+            urlString = mirror
+        } else {
+            urlString = model.coremlDownloadURL
+        }
+        guard let urlString, let url = URL(string: urlString) else {
             throw NSError(domain: "VoiceNotes.Download", code: -4,
                           userInfo: [NSLocalizedDescriptionKey: "该模型暂无 Core ML 编码器"])
         }
 
         let zipURL = try await download(url, fileName: "ggml-\(model.coremlName)-encoder.mlmodelc.zip", onProgress: onProgress)
 
-        if let expected = model.coremlSHA256, !expected.isEmpty {
+        // Only the mirror artifact has a known checksum; the original HF zip is
+        // byte-different, so verification is skipped for it.
+        if useMirror, let expected = model.coremlMirrorSHA256, !expected.isEmpty {
             let actual = try ZipUtil.sha256(ofFile: zipURL)
             guard actual.caseInsensitiveCompare(expected) == .orderedSame else {
                 try? fileManager.removeItem(at: zipURL)

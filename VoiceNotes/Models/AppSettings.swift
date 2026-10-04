@@ -12,6 +12,7 @@ enum AppSettings {
 
     private static let keySelectedAsrModel = "selected_asr_model"
     private static let keyAsrLanguage = "asr_language"
+    private static let keyMirrorBaseURL = "mirror_base_url"
     private static let keyLlmProfiles = "llm_profiles_json"
     private static let keyActiveLlmProfileId = "active_llm_profile_id"
     private static let keyInputDeviceUID = "selected_input_device_uid"
@@ -29,6 +30,34 @@ enum AppSettings {
     static var asrLanguage: String {
         get { defaults.string(forKey: keyAsrLanguage) ?? defaultAsrLanguage }
         set { defaults.set(newValue, forKey: keyAsrLanguage) }
+    }
+
+    /// Base URL used for mirror downloads (ASR models and Core ML encoders).
+    /// Empty (the initial state) means no mirror is configured and mirror
+    /// downloads are disabled until the user fills it in.
+    static var mirrorBaseURL: String {
+        get { defaults.string(forKey: keyMirrorBaseURL) ?? "" }
+        set {
+            let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                defaults.removeObject(forKey: keyMirrorBaseURL)
+            } else {
+                defaults.set(trimmed, forKey: keyMirrorBaseURL)
+            }
+        }
+    }
+
+    static var isMirrorConfigured: Bool {
+        !mirrorBaseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Builds an absolute mirror URL for a relative file path. Returns `nil`
+    /// when no mirror base is configured.
+    static func mirrorURL(path: String) -> String? {
+        var base = mirrorBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !base.isEmpty else { return nil }
+        while base.hasSuffix("/") { base.removeLast() }
+        return "\(base)/\(path)"
     }
 
     // MARK: - Audio input

@@ -7,6 +7,7 @@ final class SettingsViewModel: ObservableObject {
     @Published var selectedModelId: String = AppSettings.defaultAsrModel
     @Published var asrLanguages: [AsrLanguage] = AsrLanguages.all
     @Published var asrLanguage: String = AppSettings.asrLanguage
+    @Published var mirrorBaseURL: String = AppSettings.mirrorBaseURL
     @Published var downloadProgress: [String: Double] = [:]
     @Published var downloadingIds: Set<String> = []
     @Published var modelDownloadTimes: [String: Date] = [:]
@@ -58,6 +59,7 @@ final class SettingsViewModel: ObservableObject {
             .filter { services.downloader.isCoreMLEncoderInstalled($0) }
             .map(\.id))
         asrLanguage = AppSettings.asrLanguage
+        mirrorBaseURL = AppSettings.mirrorBaseURL
         llmProfiles = AppSettings.llmProfiles
         activeLlmProfileId = AppSettings.activeLlmProfileId
         refreshInputDevices()
@@ -81,6 +83,22 @@ final class SettingsViewModel: ObservableObject {
         AppSettings.asrLanguage = id
         asrLanguage = id
         message = "识别语言已设为「\(AsrLanguages.displayName(id))」"
+        error = nil
+    }
+
+    // MARK: - Mirror
+
+    func saveMirrorBaseURL() {
+        AppSettings.mirrorBaseURL = mirrorBaseURL
+        mirrorBaseURL = AppSettings.mirrorBaseURL
+        message = mirrorBaseURL.isEmpty ? "镜像地址已清空" : "镜像地址已保存"
+        error = nil
+    }
+
+    func clearMirrorBaseURL() {
+        AppSettings.mirrorBaseURL = ""
+        mirrorBaseURL = ""
+        message = "镜像地址已清空"
         error = nil
     }
 
@@ -126,14 +144,16 @@ final class SettingsViewModel: ObservableObject {
 
     // MARK: - Core ML encoder
 
-    func downloadCoreMLEncoder(_ id: String) {
+    func downloadCoreMLEncoder(_ id: String, useMirror: Bool = false) {
         guard let model = AsrModels.find(id), model.hasCoreML else { return }
         coremlInstallingIds.insert(id)
         error = nil
-        message = "正在下载 \(model.displayName) 的 Core ML 编码器…"
+        message = useMirror
+            ? "正在从镜像下载 \(model.displayName) 的 Core ML 编码器…"
+            : "正在下载 \(model.displayName) 的 Core ML 编码器…"
         Task {
             do {
-                try await services.downloader.downloadCoreMLEncoder(model) { [weak self] progress in
+                try await services.downloader.downloadCoreMLEncoder(model, useMirror: useMirror) { [weak self] progress in
                     Task { @MainActor in self?.coremlDownloadProgress[id] = progress }
                 }
                 coremlDownloadProgress[id] = nil
