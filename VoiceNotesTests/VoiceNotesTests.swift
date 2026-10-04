@@ -95,6 +95,35 @@ final class ExportFileNamesTests: XCTestCase {
     }
 }
 
+final class RepetitionFilterTests: XCTestCase {
+    func testCollapsesReportedLoop() {
+        let loop = String(repeating: "to operate on the defense ", count: 60)
+        let text = "and yet you were one of the first AI companies. " + loop
+        let cleaned = RepetitionFilter.removeRepetition(text)
+        XCTAssertEqual(cleaned, "and yet you were one of the first AI companies. to operate on the defense")
+    }
+
+    func testKeepsLegitimateEmphasis() {
+        XCTAssertEqual(RepetitionFilter.removeRepetition("no no no"), "no no no")
+        XCTAssertEqual(RepetitionFilter.removeRepetition("very very good"), "very very good")
+    }
+
+    func testKeepsDoublePhrase() {
+        let text = "to sign a contract to sign a contract with the defense"
+        XCTAssertEqual(RepetitionFilter.removeRepetition(text), text)
+    }
+
+    func testLeavesNormalTextUnchanged() {
+        let text = "The quick brown fox jumps over the lazy dog."
+        XCTAssertEqual(RepetitionFilter.removeRepetition(text), text)
+    }
+
+    func testPreservesKeptSpacingAndNewlines() {
+        let text = "line one\nline two"
+        XCTAssertEqual(RepetitionFilter.removeRepetition(text), text)
+    }
+}
+
 final class DiaryStoreTests: XCTestCase {
     func testCRUDAndNeighbors() async throws {
         let url = FileManager.default.temporaryDirectory

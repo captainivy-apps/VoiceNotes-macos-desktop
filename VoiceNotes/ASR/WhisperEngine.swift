@@ -87,16 +87,24 @@ actor WhisperContext {
         params.translate = false
         params.n_threads = Int32(Self.preferredThreadCount)
         params.offset_ms = 0
-        params.no_context = false
+        // Keep decodes independent (whisper.cpp default). Conditioning on the
+        // previous transcript lets a single bad segment seed the next one, so a
+        // repetition loop can propagate and compound across a whole recording.
+        params.no_context = true
         params.single_segment = false
         params.carry_initial_prompt = false
-        // Default is 5, which runs five parallel decoders per step (~5x slower)
-        // with negligible accuracy gain for transcription. Use 1.
-        params.greedy.best_of = 1
-        // Default 0.2 makes whisper re-decode a segment with rising temperature
-        // whenever the entropy/log-prob checks fail. On CPU this can silently
-        // double or triple the cost of noisier segments; disable the fallback.
-        params.temperature_inc = 0
+        // Restore the default (5) parallel decoders. At temperature 0 greedy
+        // decoding always uses a single decoder regardless of `best_of`, so this
+        // costs nothing in the common case; it only widens the candidate pool
+        // during temperature fallback, where quality matters.
+        params.greedy.best_of = 5
+        // Keep the default temperature fallback (0.2). The entropy check flags
+        // repetitive low-entropy output as failed, but the decoder is only
+        // retried at a higher temperature when more temperatures are available.
+        // Disabling this (temperature_inc = 0) emits repetition loops verbatim.
+        params.temperature_inc = 0.2
+        // Suppress non-speech tokens, a known source of hallucinated text.
+        params.suppress_nst = true
 
         let box = ProgressBox(handler: onProgress ?? { _ in })
         params.progress_callback = whisperProgressCallback
@@ -209,7 +217,8 @@ actor WhisperEngine {
             let progress: @Sendable (Int) -> Void = { percent in
                 onProgress?(0.15 + Float(percent) / 100 * 0.85, .transcribing)
             }
-            return try await engine.transcribe(samples: audio, language: language, initialPrompt: Self.initialPrompt(for: language), vadModelPath: Self.vadModelPath, onProgress: progress)
+            let raw = try await engine.transcribe(samples: audio, language: language, initialPrompt: Self.initialPrompt(for: language), vadModelPath: Self.vadModelPath, onProgress: progress)
+            return RepetitionFilter.removeRepetition(raw)
         }
 
         let step = Self.segmentSamples - Self.overlapSamples
@@ -229,11 +238,13 @@ actor WhisperEngine {
                 let segmentProgress = (Float(index) + Float(percent) / 100) / Float(segmentCount)
                 onProgress?(0.15 + segmentProgress * 0.85, .transcribing)
             }
-            let text = try await engine.transcribe(samples: audio, language: language, initialPrompt: Self.initialPrompt(for: language), vadModelPath: Self.vadModelPath, onProgress: progress)
+            let raw = try await engine.transcribe(samples: audio, language: language, initialPrompt: Self.initialPrompt(for: language), vadModelPath: Self.vadModelPath, onProgress: progress)
+            let text = RepetitionFilter.removeRepetition(raw)
             if !text.isEmpty { parts.append(text) }
             onProgress?(0.15 + Float(index + 1) / Float(segmentCount) * 0.85, .transcribing)
         }
-        return parts.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        let joined = parts.joined(separator: "\n")
+        return RepetitionFilter.removeRepetition(joined).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     func release() {

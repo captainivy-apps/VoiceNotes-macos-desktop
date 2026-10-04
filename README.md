@@ -191,7 +191,7 @@ otool -tv /tmp/whisper_x86 | grep -c '%ymm'   # 应远大于 0
 - **按架构分别编译**：`scripts/build-whisper-xcframework.sh` 对 `arm64` 与 `x86_64` 各配置一次 CMake，再 `lipo` 成通用库。这很关键——若直接以 `arm64;x86_64` 通用配置构建，ggml 的架构探测会返回 `UNKNOWN`，从而静默禁用 x86 的 AVX2/FMA 与 ARM 的 NEON 优化内核，退化为极慢的 generic 实现。`x86_64` 显式启用 SSE4.2/AVX/AVX2/FMA/F16C/BMI2（`AVX512` 关闭以保证兼容）。macOS 13 支持的所有 Intel Mac 均支持 AVX2。
 - 内置 Silero VAD（`VoiceNotes/Resources/ggml-silero-v5.1.2.bin`）：识别前跳过静音段，对停顿较多的口述提速并减少幻觉；未内置时也可将同名模型放入 `models/` 目录。
 - 长音频按约 5 分钟分窗、1 秒重叠分段识别，避免一次性占用过多内存。
-- 识别语言默认「自动检测」（whisper 按音频判断），可在设置中固定为中文/English 等；解码使用 `greedy.best_of = 1` 且关闭温度回退（`temperature_inc = 0`）以加快速度。线程数按物理核数设置，避免超线程过度订阅。
+- 识别语言默认「自动检测」（whisper 按音频判断），可在设置中固定为中文/English 等。解码保留熵检查触发的温度回退（`temperature_inc = 0.2`，仅在低熵/重复段重解码，用于打断重复循环）、抑制非语音 token（`suppress_nst`），并保持各段独立（`no_context = true`，避免一段的幻觉污染后续段）；`greedy.best_of = 5` 仅在回退时扩充候选，温度 0 的常规解码仍只用 1 个 decoder，故不影响常规速度。主要提速来自 VAD 跳过静音、按物理核数设置线程、Metal / Core ML 与自动语言检测。此外对输出做重复片段折叠作为兜底。
 
 ## 工程结构
 
@@ -201,7 +201,7 @@ VoiceNotes/
   Models/                    # DiaryEntry / AsrModelInfo / LlmProfile / AppSettings
   Data/                      # Paths / SQLiteDatabase / DiaryStore
   Audio/                     # AudioRecorder / WavFile / AudioImporter / AudioPlayer
-  ASR/                       # WhisperEngine / ModelDownloader / AsrProgress
+  ASR/                       # WhisperEngine / ModelDownloader / AsrProgress / RepetitionFilter
   LLM/                       # OpenAiCompatibleClient / LlmProgress
   Export/                    # Exporter / ExportFileNames
   ViewModels/                # Record / DiaryList / DiaryDetail / Settings
