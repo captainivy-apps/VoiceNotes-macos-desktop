@@ -11,6 +11,18 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
     /// `AVCaptureDevice.uniqueID` of the device to record from; nil or empty uses the system default.
     var inputDeviceUID: String?
 
+    /// Voice-activated recording configuration. Snapshot on `start(url:)`.
+    var voiceActivationEnabled = false
+    var silencePauseSeconds: TimeInterval = 5
+    var silenceStopSeconds: TimeInterval = 20
+    /// RMS threshold (0...1) above which a buffer is considered audible.
+    var silenceThreshold: Float = 0.01
+
+    /// Called on the main queue when voice activation pauses / resumes / stops.
+    var onAutoPause: (() -> Void)?
+    var onAutoResume: (() -> Void)?
+    var onAutoStop: (() -> Void)?
+
     private let session = AVCaptureSession()
     private let audioOutput = AVCaptureAudioDataOutput()
     /// Serial queue for all capture callbacks and file/state mutation.
@@ -30,6 +42,11 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
     private var totalPcmBytes: UInt64 = 0
     private var displayGain: Float = 0.08
 
+    // Voice activity state, accessed only on `stateQueue`.
+    private var voiceGate: VoiceActivityGate?
+    private var autoStopFired = false
+    private var voicePaused = false
+
     private let amplitudeLock = NSLock()
     private var amplitudeHistory: [Float] = []
     private let maxAmplitudeHistory = 120
@@ -42,6 +59,13 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
         amplitudeLock.lock()
         defer { amplitudeLock.unlock() }
         return amplitudeHistory
+    }
+
+    /// Duration of audio actually written to disk (excludes paused silence).
+    var recordedDurationMs: Int64 {
+        stateQueue.sync {
+            Int64(totalPcmBytes) * 1000 / Int64(WavFile.sampleRate * 2)
+        }
     }
 
     static func requestPermission() async -> Bool {
@@ -70,6 +94,18 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
             converterInputFormat = nil
             lastError = nil
             displayGain = 0.08
+            autoStopFired = false
+            voicePaused = false
+            if voiceActivationEnabled {
+                voiceGate = VoiceActivityGate(
+                    pauseAfter: silencePauseSeconds,
+                    stopAfter: silenceStopSeconds,
+                    threshold: silenceThreshold,
+                    start: Date()
+                )
+            } else {
+                voiceGate = nil
+            }
             amplitudeLock.lock()
             amplitudeHistory.removeAll()
             amplitudeLock.unlock()
@@ -136,6 +172,8 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
         stateQueue.sync {
             guard isRecording else { return }
             isRecording = false
+            voiceGate = nil
+            voicePaused = false
             duration = finalizeFileLocked()
         }
         session.stopRunning()
@@ -148,6 +186,8 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
         audioOutput.setSampleBufferDelegate(nil, queue: nil)
         stateQueue.sync {
             isRecording = false
+            voiceGate = nil
+            voicePaused = false
             _ = finalizeFileLocked()
         }
     }
@@ -159,7 +199,36 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
         didOutput sampleBuffer: CMSampleBuffer,
         from connection: AVCaptureConnection
     ) {
-        guard isRecording, let input = Self.makeMonoBuffer(from: sampleBuffer) else { return }
+        guard isRecording,
+              !autoStopFired,
+              let input = Self.makeMonoBuffer(from: sampleBuffer) else { return }
+
+        if var gate = voiceGate {
+            let transition = gate.consume(level: Self.rmsLevel(input), at: Date())
+            voiceGate = gate
+            switch transition {
+            case .paused:
+                voicePaused = true
+                let callback = onAutoPause
+                DispatchQueue.main.async { callback?() }
+            case .resumed:
+                voicePaused = false
+                let callback = onAutoResume
+                DispatchQueue.main.async { callback?() }
+            case .stopped:
+                voicePaused = true
+                autoStopFired = true
+                let callback = onAutoStop
+                DispatchQueue.main.async { callback?() }
+            case .none:
+                break
+            }
+            if voicePaused {
+                appendSilentAmplitude()
+                return
+            }
+        }
+
         write(input)
     }
 
@@ -229,6 +298,28 @@ final class AudioRecorder: NSObject, AVCaptureAudioDataOutputSampleBufferDelegat
     }
 
     // MARK: - Helpers
+
+    /// Appends a zero amplitude so the waveform renders flat while paused.
+    private func appendSilentAmplitude() {
+        amplitudeLock.lock()
+        amplitudeHistory.append(0)
+        while amplitudeHistory.count > maxAmplitudeHistory {
+            amplitudeHistory.removeFirst()
+        }
+        amplitudeLock.unlock()
+    }
+
+    /// Root-mean-square level of a mono Float32 buffer, normalized to 0...1.
+    private static func rmsLevel(_ buffer: AVAudioPCMBuffer) -> Float {
+        guard let channel = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return 0 }
+        let count = Int(buffer.frameLength)
+        var sum: Float = 0
+        for i in 0..<count {
+            let sample = channel[i]
+            sum += sample * sample
+        }
+        return (sum / Float(count)).squareRoot()
+    }
 
     private func resolveDevice() -> AVCaptureDevice? {
         if let uid = inputDeviceUID, !uid.isEmpty,

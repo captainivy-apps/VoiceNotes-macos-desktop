@@ -10,12 +10,20 @@ enum AppSettings {
         "你是记事整理助手。将用户的口语识别稿整理为简洁、通顺的记事正文。" +
         "去除口语赘词和重复，修正逻辑顺序，保留原意与情感，不要添加未提及的内容。"
 
+    static let defaultVoiceSilencePauseSeconds = 5
+    static let defaultVoiceSilenceStopSeconds = 20
+    static let minimumVoiceSilencePauseSeconds = 1
+    static let minimumVoiceSilenceStopSeconds = 2
+
     private static let keySelectedAsrModel = "selected_asr_model"
     private static let keyAsrLanguage = "asr_language"
     private static let keyMirrorBaseURL = "mirror_base_url"
     private static let keyLlmProfiles = "llm_profiles_json"
     private static let keyActiveLlmProfileId = "active_llm_profile_id"
     private static let keyInputDeviceUID = "selected_input_device_uid"
+    private static let keyVoiceActivationEnabled = "voice_activation_enabled"
+    private static let keyVoiceSilencePauseSeconds = "voice_silence_pause_seconds"
+    private static let keyVoiceSilenceStopSeconds = "voice_silence_stop_seconds"
 
     private static var defaults: UserDefaults { .standard }
 
@@ -66,6 +74,43 @@ enum AppSettings {
     static var selectedInputDeviceUID: String {
         get { defaults.string(forKey: keyInputDeviceUID) ?? "" }
         set { defaults.set(newValue, forKey: keyInputDeviceUID) }
+    }
+
+    // MARK: - Voice-activated recording
+
+    /// Whether the record screen starts with voice-activated recording enabled.
+    static var voiceActivationEnabled: Bool {
+        get { defaults.bool(forKey: keyVoiceActivationEnabled) }
+        set { defaults.set(newValue, forKey: keyVoiceActivationEnabled) }
+    }
+
+    /// Seconds of silence before auto-pausing. Always `< voiceSilenceStopSeconds`.
+    static var voiceSilencePauseSeconds: Int {
+        get {
+            let stored = defaults.integer(forKey: keyVoiceSilencePauseSeconds)
+            guard stored > 0 else { return defaultVoiceSilencePauseSeconds }
+            return max(stored, minimumVoiceSilencePauseSeconds)
+        }
+        set {
+            let pause = max(newValue, minimumVoiceSilencePauseSeconds)
+            defaults.set(pause, forKey: keyVoiceSilencePauseSeconds)
+            if voiceSilenceStopSeconds <= pause {
+                defaults.set(pause + 1, forKey: keyVoiceSilenceStopSeconds)
+            }
+        }
+    }
+
+    /// Seconds of silence before auto-stopping. Always `> voiceSilencePauseSeconds`.
+    static var voiceSilenceStopSeconds: Int {
+        get {
+            let stored = defaults.integer(forKey: keyVoiceSilenceStopSeconds)
+            guard stored > 0 else { return defaultVoiceSilenceStopSeconds }
+            return max(stored, voiceSilencePauseSeconds + 1)
+        }
+        set {
+            let stop = max(max(newValue, voiceSilencePauseSeconds + 1), minimumVoiceSilenceStopSeconds)
+            defaults.set(stop, forKey: keyVoiceSilenceStopSeconds)
+        }
     }
 
     // MARK: - LLM profiles

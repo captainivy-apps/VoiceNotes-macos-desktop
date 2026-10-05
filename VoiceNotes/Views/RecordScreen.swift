@@ -107,8 +107,19 @@ struct RecordScreen: View {
                         .clipShape(Circle())
                 }
                 .buttonStyle(.plain)
-                Text(vm.isRecording ? "点击停止录音" : "点击开始录音")
+                Text(vm.isRecording ? (vm.isPaused ? "已暂停（等待声音…）" : "点击停止录音") : "点击开始录音")
+                    .foregroundStyle(vm.isRecording && vm.isPaused ? Color.orange : Color.secondary)
+
+                Toggle("声控录音", isOn: Binding(
+                    get: { vm.voiceActivationEnabled },
+                    set: { vm.setVoiceActivation($0) }
+                ))
+                .toggleStyle(.checkbox)
+                .disabled(vm.isRecording)
+                Text("静音 \(AppSettings.voiceSilencePauseSeconds) 秒自动暂停，期间有声音自动恢复；静音 \(AppSettings.voiceSilenceStopSeconds) 秒自动停止。")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
 
                 Button {
                     showingImporter = true

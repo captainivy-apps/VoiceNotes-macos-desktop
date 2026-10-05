@@ -99,6 +99,29 @@ struct SettingsScreen: View {
 
             Divider()
 
+            Text("声控录音").font(.title3.bold())
+            Text("在录制界面勾选「声控录音」后生效：静音一段时间后自动暂停，暂停期间检测到声音自动恢复；静音过久则自动停止，停止后不再自动恢复。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Stepper(value: Binding(
+                get: { vm.voiceSilencePauseSeconds },
+                set: { vm.setVoiceSilencePauseSeconds($0) }
+            ), in: AppSettings.minimumVoiceSilencePauseSeconds...60) {
+                Text("静音 \(vm.voiceSilencePauseSeconds) 秒后自动暂停")
+            }
+            .frame(maxWidth: 360, alignment: .leading)
+
+            Stepper(value: Binding(
+                get: { vm.voiceSilenceStopSeconds },
+                set: { vm.setVoiceSilenceStopSeconds($0) }
+            ), in: (vm.voiceSilencePauseSeconds + 1)...600) {
+                Text("静音 \(vm.voiceSilenceStopSeconds) 秒后自动停止")
+            }
+            .frame(maxWidth: 360, alignment: .leading)
+
+            Divider()
+
             Text("ASR 模型").font(.title3.bold())
             Text("在已下载的模型中点击切换当前使用的模型。中文识别稿的标点与模型大小相关，建议使用 Small 及以上；完整排版可依赖 LLM 润色得到润色稿。")
                 .font(.caption)

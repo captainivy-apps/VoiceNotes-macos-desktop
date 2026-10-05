@@ -20,6 +20,9 @@ final class SettingsViewModel: ObservableObject {
     @Published var inputDevices: [AudioInputDevice] = []
     @Published var selectedInputDeviceUID = AppSettings.selectedInputDeviceUID
 
+    @Published var voiceSilencePauseSeconds = AppSettings.voiceSilencePauseSeconds
+    @Published var voiceSilenceStopSeconds = AppSettings.voiceSilenceStopSeconds
+
     @Published var editorOpen = false
     @Published var editorIsNew = false
     @Published var editingId = ""
@@ -62,7 +65,25 @@ final class SettingsViewModel: ObservableObject {
         mirrorBaseURL = AppSettings.mirrorBaseURL
         llmProfiles = AppSettings.llmProfiles
         activeLlmProfileId = AppSettings.activeLlmProfileId
+        voiceSilencePauseSeconds = AppSettings.voiceSilencePauseSeconds
+        voiceSilenceStopSeconds = AppSettings.voiceSilenceStopSeconds
         refreshInputDevices()
+    }
+
+    func setVoiceSilencePauseSeconds(_ value: Int) {
+        AppSettings.voiceSilencePauseSeconds = value
+        voiceSilencePauseSeconds = AppSettings.voiceSilencePauseSeconds
+        voiceSilenceStopSeconds = AppSettings.voiceSilenceStopSeconds
+        message = "静音 \(voiceSilencePauseSeconds) 秒自动暂停"
+        error = nil
+    }
+
+    func setVoiceSilenceStopSeconds(_ value: Int) {
+        AppSettings.voiceSilenceStopSeconds = value
+        voiceSilenceStopSeconds = AppSettings.voiceSilenceStopSeconds
+        voiceSilencePauseSeconds = AppSettings.voiceSilencePauseSeconds
+        message = "静音 \(voiceSilenceStopSeconds) 秒自动停止"
+        error = nil
     }
 
     func refreshInputDevices() {

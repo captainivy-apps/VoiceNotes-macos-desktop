@@ -50,6 +50,45 @@ final class WavFileTests: XCTestCase {
     }
 }
 
+final class VoiceActivityGateTests: XCTestCase {
+    private let t0 = Date(timeIntervalSince1970: 1_000_000)
+
+    func testPausesAfterSilence() {
+        var gate = VoiceActivityGate(pauseAfter: 5, stopAfter: 20, threshold: 0.01, start: t0)
+        XCTAssertEqual(gate.consume(level: 0, at: t0.addingTimeInterval(4.9)), .none)
+        XCTAssertEqual(gate.consume(level: 0, at: t0.addingTimeInterval(5)), .paused)
+        XCTAssertTrue(gate.isPaused)
+    }
+
+    func testResumesOnSound() {
+        var gate = VoiceActivityGate(pauseAfter: 5, stopAfter: 20, threshold: 0.01, start: t0)
+        XCTAssertEqual(gate.consume(level: 0, at: t0.addingTimeInterval(5)), .paused)
+        XCTAssertEqual(gate.consume(level: 0.5, at: t0.addingTimeInterval(6)), .resumed)
+        XCTAssertFalse(gate.isPaused)
+    }
+
+    func testSoundResetsSilenceTimer() {
+        var gate = VoiceActivityGate(pauseAfter: 5, stopAfter: 20, threshold: 0.01, start: t0)
+        XCTAssertEqual(gate.consume(level: 0.5, at: t0.addingTimeInterval(4)), .none)
+        XCTAssertEqual(gate.consume(level: 0, at: t0.addingTimeInterval(8.9)), .none)
+        XCTAssertEqual(gate.consume(level: 0, at: t0.addingTimeInterval(9)), .paused)
+    }
+
+    func testStopsAfterLongSilenceAndNeverResumes() {
+        var gate = VoiceActivityGate(pauseAfter: 5, stopAfter: 20, threshold: 0.01, start: t0)
+        XCTAssertEqual(gate.consume(level: 0, at: t0.addingTimeInterval(5)), .paused)
+        XCTAssertEqual(gate.consume(level: 0, at: t0.addingTimeInterval(20)), .stopped)
+        XCTAssertTrue(gate.isStopped)
+        XCTAssertEqual(gate.consume(level: 0.9, at: t0.addingTimeInterval(25)), .none)
+        XCTAssertTrue(gate.isStopped)
+    }
+
+    func testEnforcesStopAfterGreaterThanPause() {
+        let gate = VoiceActivityGate(pauseAfter: 10, stopAfter: 3, threshold: 0.01, start: t0)
+        XCTAssertGreaterThan(gate.stopAfter, gate.pauseAfter)
+    }
+}
+
 final class ZipUtilTests: XCTestCase {
     func testSHA256() throws {
         let url = FileManager.default.temporaryDirectory

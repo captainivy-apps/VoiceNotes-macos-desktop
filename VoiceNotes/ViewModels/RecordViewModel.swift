@@ -20,6 +20,8 @@ final class RecordViewModel: ObservableObject {
     @Published var error: String?
     @Published var toast: String?
     @Published var inputDeviceName = ""
+    @Published var voiceActivationEnabled = AppSettings.voiceActivationEnabled
+    @Published var isPaused = false
 
     private let services: AppServices
     private let recorder = AudioRecorder()
@@ -38,8 +40,17 @@ final class RecordViewModel: ObservableObject {
         inputDeviceName = AudioInputDevices.currentInputName(selectedUID: AppSettings.selectedInputDeviceUID)
     }
 
+    func setVoiceActivation(_ enabled: Bool) {
+        voiceActivationEnabled = enabled
+        AppSettings.voiceActivationEnabled = enabled
+    }
+
     var elapsedMs: Int64 {
-        guard isRecording, let recordingStart else { return durationMs }
+        guard isRecording else { return durationMs }
+        if voiceActivationEnabled {
+            return recorder.recordedDurationMs
+        }
+        guard let recordingStart else { return durationMs }
         return Int64(Date().timeIntervalSince(recordingStart) * 1000)
     }
 
@@ -79,6 +90,18 @@ final class RecordViewModel: ObservableObject {
             let url = Paths.newRecordingFile()
             let deviceUID = AppSettings.selectedInputDeviceUID
             recorder.inputDeviceUID = deviceUID.isEmpty ? nil : deviceUID
+            recorder.voiceActivationEnabled = voiceActivationEnabled
+            recorder.silencePauseSeconds = TimeInterval(AppSettings.voiceSilencePauseSeconds)
+            recorder.silenceStopSeconds = TimeInterval(AppSettings.voiceSilenceStopSeconds)
+            recorder.onAutoPause = { [weak self] in
+                Task { @MainActor in self?.isPaused = true }
+            }
+            recorder.onAutoResume = { [weak self] in
+                Task { @MainActor in self?.isPaused = false }
+            }
+            recorder.onAutoStop = { [weak self] in
+                Task { @MainActor in self?.handleAutoStop() }
+            }
             refreshInputDeviceName()
             do {
                 try recorder.start(url: url)
@@ -93,6 +116,7 @@ final class RecordViewModel: ObservableObject {
             awaitingAsrPrompt = false
             error = nil
             statusMessage = ""
+            isPaused = false
             isRecording = true
             audioPath = url.path
             recordingStart = Date()
@@ -104,14 +128,22 @@ final class RecordViewModel: ObservableObject {
         guard isRecording else { return }
         let duration = recorder.stop()
         isRecording = false
+        isPaused = false
         recordingStart = nil
         stopTicker()
         let path = audioPath ?? ""
         Task { await finalizeAudio(path: path, durationMs: duration) }
     }
 
+    private func handleAutoStop() {
+        guard isRecording else { return }
+        stopRecording()
+        toast = "检测到长时间静音，已自动停止录音"
+    }
+
     func onRecordingFailed(_ message: String) {
         isRecording = false
+        isPaused = false
         recordingStart = nil
         stopTicker()
         audioPath = nil
@@ -245,7 +277,11 @@ final class RecordViewModel: ObservableObject {
         stopTicker()
         stopProcessingTimer()
         recorder.cancel()
+        recorder.onAutoPause = nil
+        recorder.onAutoResume = nil
+        recorder.onAutoStop = nil
         isRecording = false
+        isPaused = false
         isProcessing = false
         audioPath = nil
         durationMs = 0
