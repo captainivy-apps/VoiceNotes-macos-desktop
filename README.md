@@ -10,12 +10,13 @@
 
 ## 功能一览
 
-- **录制页**：大按钮录音、录音时长、实时波形；支持导入 WAV/MP3/M4A 等音频文件
+- **录制页**：大按钮录音、录音时长、实时波形、当前录音设备提示；支持导入 WAV/MP3/M4A 等音频文件
+- **声控录音**：静音数秒自动暂停，恢复说话自动继续；长时间静音自动停止并保存（时长可配置）
 - **识别稿**：录音保存后询问是否立即识别；识别完成可编辑
 - **润色稿**：可用 LLM 加工识别稿，或直接另存为润色稿
 - **记事列表**：按时间倒序，支持多选删除
-- **记事详情**：录音试听（波形 + 播放进度）、识别稿/润色稿标签页编辑、分别删除录音/识别稿/润色稿、删除整篇、复制、导出、上一篇/下一篇
-- **设置**：ASR 模型下载/镜像下载/删除/切换（镜像地址可自定义）；多组 LLM 配置（OpenAI / Ollama / DeepSeek 等）增删改、设为默认、测试连接；帮助
+- **记事详情**：录音试听（波形 + 播放进度）、重新识别/重新润色、识别稿/润色稿标签页编辑、识别稿可一键当作润色稿、分别删除录音/识别稿/润色稿、删除整篇、复制、导出、上一篇/下一篇
+- **设置**：ASR 模型下载/镜像下载/删除/切换（镜像地址可自定义）；识别语言（自动 / 中文 / English / 日本語 / 한국어）；声控录音的暂停与停止静音时长；录音设备选择与刷新；多组 LLM 配置（OpenAI / Ollama / DeepSeek 等）增删改、设为默认、测试连接；帮助
 - 处理过程展示进度与耗时；错误提示清晰
 
 ## 技术栈
@@ -25,7 +26,7 @@
 | UI | SwiftUI（`NavigationSplitView`） |
 | 本地 ASR | whisper.cpp 1.8.5（Metal + BLAS + Accelerate + Core ML），`whisper.xcframework` |
 | 本地存储 | SQLite（系统 `libsqlite3`） |
-| 音频 | AVFoundation（`AVCaptureSession` 采集 / `AVAudioConverter` / `AVAudioPlayer`） |
+| 音频 | AVFoundation（`AVCaptureSession` 采集 / `AVCaptureDevice` 设备选择 / `AVAudioConverter` / `AVAudioPlayer`） |
 | LLM | OpenAI 兼容 `/v1/chat/completions`，SSE 流式 |
 | 最低系统 | macOS 13.0（Ventura） |
 | Bundle ID | `com.dafei.voicenotes` |
@@ -54,6 +55,7 @@ git submodule update --init --recursive
 ```
 
 开发时也可直接打开 `VoiceNotes.xcodeproj`，选择 `VoiceNotes` scheme 运行。
+应用图标由 `scripts/render-appicon.sh` 从 `scripts/appicon/AppIcon.svg` 生成各尺寸 PNG。
 
 ### 构建产物架构
 
@@ -67,14 +69,17 @@ lipo -info dist/VoiceNotes.app/Contents/Frameworks/whisper.framework/Versions/A/
 ## 首次使用
 
 1. 打开 **设置 → 录制**，下载至少一个 ASR 模型（建议先下载 **Base**，约 142 MB），并设为当前模型。
-2. 如需 LLM 润色，在 **设置 → LLM 配置** 添加一组或多组配置并设为默认；也可在录制页/详情页临时切换。
-3. 回到 **录制** 页开始录音或导入音频。
+2. 如需选择指定麦克风，在 **设置 → 录音设备** 中选择（默认跟随 macOS「声音 → 输入」）。
+3. 如需声控录音，在录制页勾选 **声控录音**，并在 **设置 → 录制 → 声控录音** 调整自动暂停 / 自动停止的静音时长。
+4. 如需 LLM 润色，在 **设置 → LLM 配置** 添加一组或多组配置并设为默认；也可在录制页/详情页临时切换。
+5. 回到 **录制** 页开始录音或导入音频。
 
 ### LLM 配置示例
 
 - **云端 OpenAI**：Base URL `https://api.openai.com`，填写 API Key，Model `gpt-4o-mini`
 - **本地 / 局域网 LLM**（Ollama、LM Studio 等）：Base URL 填局域网地址，API Key 可留空
   - 例如 Ollama：`http://127.0.0.1:11434`，Model 如 `qwen2.5:7b`
+  - 应用已声明本地网络权限并允许局域网 HTTP 访问；连接使用 SSE 流式输出
 
 ## 内置 ASR 模型
 
@@ -105,6 +110,7 @@ Intel Mac 无 ANE，会回退到（已启用 AVX2 的）CPU。
 应用内下载：在 **设置 → 录制 → 已下载的模型 → Core ML 编码器**，可分别从
 **原版（Hugging Face）** 与 **镜像** 下载 `ggml-<模型>-encoder.mlmodelc.zip`，
 解压到 `models/` 目录；也可 **导入 .mlpackage** 用本机 `coremlc` 现场编译。
+编码器大小约为：Tiny 14 MB、Base 36 MB、Small 155 MB、Medium 541 MB、Large v3 Turbo 1.1 GB。
 镜像地址需在 **设置 → 录制 → 模型下载镜像** 中自行填写（初始为空，未填写时不显示镜像
 下载选项），模型与编码器下载共用该地址。
 镜像下载会校验 SHA-256；原版编码器 zip 与镜像构建产物字节不同，故原版不做校验。
@@ -182,6 +188,7 @@ otool -tv /tmp/whisper_x86 | grep -c '%ymm'   # 应远大于 0
 - 录音：`recordings/rec_*.wav`（16 kHz 单声道 PCM）
 - 数据库与文本：`voice_notes.db`（SQLite）
 - ASR 模型：`models/ggml-*.bin`
+- Core ML 编码器：`models/ggml-*-encoder.mlmodelc/`
 
 导出的录音/识别稿/润色稿通过系统保存面板写入，默认目录为「下载」。
 
@@ -190,8 +197,10 @@ otool -tv /tmp/whisper_x86 | grep -c '%ymm'   # 应远大于 0
 - 通用二进制：`arm64` 使用 Metal + flash attention 加速，若安装了 Core ML 编码器则进一步在 Neural Engine 上运行编码器；`x86_64`（Intel）自动回退到 CPU（Accelerate/BLAS）。
 - **按架构分别编译**：`scripts/build-whisper-xcframework.sh` 对 `arm64` 与 `x86_64` 各配置一次 CMake，再 `lipo` 成通用库。这很关键——若直接以 `arm64;x86_64` 通用配置构建，ggml 的架构探测会返回 `UNKNOWN`，从而静默禁用 x86 的 AVX2/FMA 与 ARM 的 NEON 优化内核，退化为极慢的 generic 实现。`x86_64` 显式启用 SSE4.2/AVX/AVX2/FMA/F16C/BMI2（`AVX512` 关闭以保证兼容）。macOS 13 支持的所有 Intel Mac 均支持 AVX2。
 - 内置 Silero VAD（`VoiceNotes/Resources/ggml-silero-v5.1.2.bin`）：识别前跳过静音段，对停顿较多的口述提速并减少幻觉；未内置时也可将同名模型放入 `models/` 目录。
+- **录音设备**：通过 `AVCaptureDevice` 枚举麦克风，可按 `uniqueID` 指定输入设备（默认跟随系统）；录音实时转换为 16 kHz 单声道 PCM，并兼容输入专用麦克风与多声道虚拟设备（如 BlackHole）。
+- **声控录音**：`VoiceActivityGate` 按 RMS 电平判断静音；默认静音 5 秒暂停、20 秒停止（设置中可调，暂停时长始终小于停止时长）。暂停期间不写入音频，恢复说话后继续写入；自动停止后保存录音并提示。
 - 长音频按约 5 分钟分窗、1 秒重叠分段识别，避免一次性占用过多内存。
-- 识别语言默认「自动检测」（whisper 按音频判断），可在设置中固定为中文/English 等。解码保留熵检查触发的温度回退（`temperature_inc = 0.2`，仅在低熵/重复段重解码，用于打断重复循环）、抑制非语音 token（`suppress_nst`），并保持各段独立（`no_context = true`，避免一段的幻觉污染后续段）；`greedy.best_of = 5` 仅在回退时扩充候选，温度 0 的常规解码仍只用 1 个 decoder，故不影响常规速度。主要提速来自 VAD 跳过静音、按物理核数设置线程、Metal / Core ML 与自动语言检测。此外对输出做重复片段折叠作为兜底。
+- 识别语言默认「自动检测」（whisper 按音频判断），可在设置中固定为中文、English、日本語、한국어。解码保留熵检查触发的温度回退（`temperature_inc = 0.2`，仅在低熵/重复段重解码，用于打断重复循环）、抑制非语音 token（`suppress_nst`），并保持各段独立（`no_context = true`，避免一段的幻觉污染后续段）；`greedy.best_of = 5` 仅在回退时扩充候选，温度 0 的常规解码仍只用 1 个 decoder，故不影响常规速度。主要提速来自 VAD 跳过静音、按物理核数设置线程、Metal / Core ML 与自动语言检测。此外对输出做重复片段折叠作为兜底。
 
 ## 工程结构
 
@@ -200,17 +209,20 @@ VoiceNotes.xcodeproj         # Xcode 工程（使用文件系统同步目录）
 VoiceNotes/
   Models/                    # DiaryEntry / AsrModelInfo / LlmProfile / AppSettings
   Data/                      # Paths / SQLiteDatabase / DiaryStore
-  Audio/                     # AudioRecorder / WavFile / AudioImporter / AudioPlayer
-  ASR/                       # WhisperEngine / ModelDownloader / AsrProgress / RepetitionFilter
+  Audio/                     # AudioRecorder / AudioInputDevices / VoiceActivityGate / WavFile / AudioImporter / AudioPlayer
+  ASR/                       # WhisperEngine / ModelDownloader / CoreMLCompiler / ZipUtil / AsrProgress / RepetitionFilter
   LLM/                       # OpenAiCompatibleClient / LlmProgress
   Export/                    # Exporter / ExportFileNames
-  ViewModels/                # Record / DiaryList / DiaryDetail / Settings
-  Views/                     # Root / Record / Notes / DiaryDetail / Settings / Help + Components
+  Utils/                     # Formatters / WaveformMath
+  ViewModels/                # AppServices / Record / DiaryList / DiaryDetail / Settings
+  Views/                     # Root / Record / Notes / DiaryDetail / Settings / Help
+    Components/              # AsrProcessingOverlay / DiaryTextEditor / LlmProfilePicker / Toast / WaveformView
   Resources/                 # 内置 Silero VAD 模型（ggml-silero-v5.1.2.bin）
+  Assets.xcassets            # AppIcon 等资源
 Frameworks/whisper.xcframework
 Vendor/whisper.cpp           # git submodule（v1.8.5）
 Support/                     # Info.plist / entitlements
-scripts/                     # build-whisper-xcframework / build-universal / build-coreml-encoders
+scripts/                     # build-whisper-xcframework / build-universal / build-coreml-encoders / render-appicon / appicon
 VoiceNotesTests/             # XCTest
 ```
 
@@ -219,6 +231,8 @@ VoiceNotesTests/             # XCTest
 ```bash
 xcodebuild -project VoiceNotes.xcodeproj -scheme VoiceNotes -destination 'platform=macOS' test
 ```
+
+单元测试覆盖 WAV 读写与波形、声控状态机、ZIP/SHA-256、导出文件名、重复片段过滤和 SQLite 存储。
 
 ## 说明
 
